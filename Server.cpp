@@ -79,11 +79,14 @@ size_t str_find_substr(const struct str *target, const struct str *src)
 			assert(src_char < INT_MAX);
 			found_location = (int)src_char;
 			found = 1;
+			src_char++;
 			for (target_char = 1; (target_char < target->len) && (src_char < src->len); ) {
 				if (src->data[src_char] != target->data[target_char]) {
 					found = 0;
 					break;
 				}
+				src_char++;
+				target_char++;
 			}
 			if (found) {
 				return found_location;
@@ -150,28 +153,33 @@ struct str_list *split(const struct str *src, const struct str *delimiter, struc
 	struct str_list *next = NULL;
 	int keep_going = 1;
 	size_t last = 0;
+	size_t eow = 0;
+	size_t word_size;
 
-	while (keep_going) {
-		size_t eow = str_find_substr(src, delimiter);
+	while (eow != -1) {
+		eow = str_find_substr(delimiter, src);
+		// Create the new str_list.
+		next = pool_alloc_type(p, struct str_list);
+		assert(eow > last);
 		if (eow == -1) {
-			// Create the new str_list.
-			next = pool_alloc_type(p, struct str_list);
-			assert(eow > last);
-			size_t word_size = eow - last;
-			int bytes_allocated = str_alloc(&next->str, word_size, p);
-			if (bytes_allocated == ENOMEM) {
-				return NULL;
-			}
-			memcpy(next->str.data, src->data + last, word_size);
+			word_size = src->len - last;
+		} else {
+			word_size = eow - last;
+		}
+		int bytes_allocated = str_alloc(&next->str, word_size, p);
+		if (bytes_allocated == ENOMEM) {
+			return NULL;
+		}
+		memcpy(next->str.data, src->data + last, next->str.len);
 
-			// Attach the str_list to the list of str_lists.
-			if (end) {
-				end->next = next;
-			} else if (root) {
-				end = root->next = next;
-			} else {
-				end = root = next;
-			}
+
+		// Attach the str_list to the list of str_lists.
+		if (end) {
+			end->next = next;
+		} else if (root) {
+			end = root->next = next;
+		} else {
+			end = root = next;
 		}
 	}
 	return root;
