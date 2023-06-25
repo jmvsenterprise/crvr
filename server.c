@@ -110,7 +110,10 @@ void pool_free(struct pool *p)
 void *pool_alloc(struct pool *p, size_t byte_amount)
 {
 	size_t alignment = sizeof(void*) - byte_amount % sizeof(void*);
-	printf("Allocating %lu alignment=%lu actual=%lu\n", byte_amount, alignment, byte_amount + alignment);
+	/*
+	printf("Allocating %lu alignment=%lu actual=%lu\n", byte_amount,
+		alignment, byte_amount + alignment);
+	*/
 	byte_amount += alignment;
 	if ((p->offset + byte_amount) > p->cap) {
 		return NULL;
@@ -203,21 +206,32 @@ size_t str_cpy(const struct str *src, struct str *dest)
 	return i;
 }
 
+void str_print(const struct str *str)
+{
+	if (str) {
+		printf("{%lu, \"%s\"}", str->len, str->data);
+	} else {
+		printf("{NULL}");
+	}
+}
+
 struct str_list {
 	struct str str;
 	struct str_list *next;
 };
 
-struct str_list *split(const struct str *src, const struct str *delimiter, struct pool *p)
+struct str_list *split(const struct str *src, const struct str *delimiter,
+	struct pool *p)
 {
 	struct str moving_src = *src;
 	struct str_list *root = NULL;
 	struct str_list *end = NULL;
 	struct str_list *next = NULL;
-	size_t last = 0;
 	size_t eow = 0;
 	size_t word_size;
 
+	printf("%s: Looking for \"%s\" in \"%s\".\n", __func__, delimiter->data,
+		src->data);
 	while (eow != (size_t)-1) {
 		eow = str_find_substr(delimiter, &moving_src);
 		// Create the new str_list.
@@ -226,28 +240,52 @@ struct str_list *split(const struct str *src, const struct str *delimiter, struc
 			printf("Failed to allocate str_list.\n");
 			return NULL;
 		}
-		assert(eow > last);
 		if (eow == (size_t)-1) {
-			word_size = src->len - last;
+			word_size = moving_src.len + 1;
+			printf("No delimiter found. Final word: %s.\n",
+				moving_src.data);
 		} else {
-			word_size = eow - last;
+			word_size = eow;
+			printf("Delimiter found at %lu: %s\n", eow,
+				moving_src.data + eow);
 		}
+		printf("Word size is %lu.\n", word_size);
 		if (str_alloc(&next->str, word_size, p) == ENOMEM) {
+			printf("Failed to allocate next's str.\n");
 			return NULL;
 		}
-		memcpy(next->str.data, src->data + last, next->str.len);
+		memcpy(next->str.data, moving_src.data, next->str.len);
+		printf("next is {%lu, \"%s\"}.\n", next->str.len,
+			next->str.data);
 
 		// Advance our src pointer now that we've copied the data.
 		moving_src.data += word_size + 1;
+		moving_src.len -= word_size + 1;
+		printf("Remaining src: \"%s\". Len=%lu.\n", moving_src.data,
+			moving_src.len);
 
 		// Attach the str_list to the list of str_lists.
 		if (end) {
 			end->next = next;
+			printf("Updated end->next: {%lu, %s}\n",
+				end->next->str.len, end->next->str.data);
+			end = next;
 		} else if (root) {
 			end = root->next = next;
+			printf("Updated root->next: {%lu, %s}\n",
+				root->next->str.len, root->next->str.data);
 		} else {
 			end = root = next;
+			printf("Updated end: {%lu, %s}\n", end->str.len,
+				end->str.data);
 		}
+	}
+	printf("%s: Done splitting. Final list:\n", __func__);
+	next = root;
+	while (next) {
+		str_print(&next->str);
+		printf("\n");
+		next = next->next;
 	}
 	return root;
 }
@@ -306,7 +344,8 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 	// Load the request version.
 	tokens = tokens->next;
 	if (!tokens) {
-		printf("Did not find the format in header: \"%s\"\n", header.data);
+		printf("Did not find the format in header: \"%s\"\n",
+			header.data);
 		return -1;
 	}
 	size_t format_len = LEN(request->format) - 1;
@@ -326,8 +365,8 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	(void)client_addr;
 
 	char buffer[4096] = {0};
-	size_t bytes_rxed = recv(client, buffer, LEN(buffer) - 1, 0);
-	if (bytes_rxed == -1) {
+	size_t bytes_rxed = (size_t)recv(client, buffer, LEN(buffer) - 1, 0);
+	if (bytes_rxed == (size_t)-1) {
 		printf("Failed to read from client: %d.\n", get_error());
 		return -1;
 	}
@@ -352,9 +391,10 @@ int serve(int server_sock)
 	while (keep_running) {
 		struct sockaddr_in client_addr;
 		memset(&client_addr, 0, sizeof(client_addr));
-		size_t addr_len = sizeof(client_addr);
+		unsigned addr_len = sizeof(client_addr);
 		printf("Waiting for connection...");
-		int client = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
+		int client = accept(server_sock,
+			(struct sockaddr*)&client_addr, &addr_len);
 		printf("contact detected.\n");
 		if (client != -1) {
 			assert(sizeof(client_addr) == addr_len);
