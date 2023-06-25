@@ -32,7 +32,7 @@ int get_error(void)
 	WSAGetLastError();
 }
 
-#elif MAC
+#elif UNIX
 #pragma message("Building for MAC")
 #include <netinet/in.h>
 #include <sys/socket.h>
