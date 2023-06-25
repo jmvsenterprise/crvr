@@ -9,3 +9,4 @@ build
 server
 *.dSYM
 config.mk
+*.obj
