@@ -6,8 +6,9 @@
 #include <stdlib.h>
 #include <string.h>
 
-#ifdef WINDOWS
+#if WINDOWS
 #include <winsock2.h>
+#pragma message("Building for windows")
 
 int init_socket_layer(void)
 {
@@ -26,10 +27,17 @@ void cleanup_socket_layer(void)
 	WSACleanup();
 }
 
+int get_error(void)
+{
+	WSAGetLastError();
+}
+
 #elif MAC
+#pragma message("Building for MAC")
 #include <netinet/in.h>
 #include <sys/socket.h>
 #include <sys/types.h>
+#include <unistd.h>
 
 int init_socket_layer(void)
 {
@@ -40,6 +48,13 @@ void cleanup_socket_layer(void)
 {
 }
 
+int get_error(void)
+{
+	return errno;
+}
+
+#else
+#error "No build type selected"
 #endif
 
 #define GIGABYTE (1000000000)
@@ -52,6 +67,17 @@ enum request_type {
 	GET,
 	POST
 };
+
+void print(struct sockaddr_in *address)
+{
+	const unsigned ip = ntohl(address->sin_addr.s_addr);
+	const unsigned byte4 = ip & 0xff000000;
+	const unsigned byte3 = ip & 0x00ff0000;
+	const unsigned byte2 = ip & 0x0000ff00;
+	const unsigned byte1 = ip & 0x000000ff;
+	const unsigned short port = ntohs(address->sin_port);
+	printf("Contact: %u.%u.%u.%u:%u\n", byte4, byte3, byte2, byte1, port);
+}
 
 struct pool {
 	size_t offset;
@@ -124,7 +150,7 @@ size_t str_find_substr(const struct str *target, const struct str *src)
 				target_char++;
 			}
 			if (found) {
-				return found_location;
+				return (size_t)found_location;
 			}
 		}
 	}
@@ -170,7 +196,7 @@ size_t str_cpy(const struct str *src, struct str *dest)
 {
 	size_t i = 0;
 	size_t max = (src->len > dest->len) ? dest->len : src->len;
-	for (i; i < max; ++i) {
+	for (; i < max; ++i) {
 		dest->data[i] = src->data[i];
 	}
 	return i;
@@ -186,17 +212,16 @@ struct str_list *split(const struct str *src, const struct str *delimiter, struc
 	struct str_list *root = NULL;
 	struct str_list *end = NULL;
 	struct str_list *next = NULL;
-	int keep_going = 1;
 	size_t last = 0;
 	size_t eow = 0;
 	size_t word_size;
 
-	while (eow != -1) {
+	while (eow != (size_t)-1) {
 		eow = str_find_substr(delimiter, src);
 		// Create the new str_list.
 		next = pool_alloc_type(p, struct str_list);
 		assert(eow > last);
-		if (eow == -1) {
+		if (eow == (size_t)-1) {
 			word_size = src->len - last;
 		} else {
 			word_size = eow - last;
@@ -237,7 +262,7 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 	struct str header;
 
 	size_t first_eol = str_find_substr(&eol, data);
-	if (first_eol == -1) {
+	if (first_eol == (size_t)-1) {
 		printf("Did not find header EOL.\n");
 		return -1;
 	}
@@ -247,7 +272,7 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 		return -1;
 	}
 
-	size_t copies = str_cpy(data, &header);
+	(void)str_cpy(data, &header);
 
 	// Figure out what type of request this is.
 	struct str_list *tokens = split(&header, &space, p);
@@ -289,12 +314,14 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 	return -1;
 }
 
-int handle_client(SOCKET client, struct sockaddr_in *client_addr, struct pool *p)
+int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 {
+	(void)client_addr;
+
 	char buffer[4096] = {0};
-	int bytes_rxed = recv(client, buffer, LEN(buffer) - 1, 0);
-	if (bytes_rxed == SOCKET_ERROR) {
-		printf("Failed to read from client: %d.\n", WSAGetLastError());
+	ssize_t bytes_rxed = recv(client, buffer, LEN(buffer) - 1, 0);
+	if (bytes_rxed == -1) {
+		printf("Failed to read from client: %d.\n", get_error());
 		return -1;
 	}
 
@@ -305,7 +332,7 @@ int handle_client(SOCKET client, struct sockaddr_in *client_addr, struct pool *p
 	return -1;
 }
 
-int serve(SOCKET server_sock)
+int serve(int server_sock)
 {
 	struct pool p = {};
 	int result = 0;
@@ -316,19 +343,15 @@ int serve(SOCKET server_sock)
 		return -1;
 	}
 	while (keep_running) {
-		struct sockaddr_in client_addr = {0};
-		int addr_len = sizeof(client_addr);
+		struct sockaddr_in client_addr;
+		memset(&client_addr, 0, sizeof(client_addr));
+		socklen_t addr_len = sizeof(client_addr);
 		printf("Waiting for connection...");
-		int client = accept(server_sock, (struct SOCKADDR*)&client_addr, &addr_len);
+		int client = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
 		printf("contact detected.\n");
 		if (client != -1) {
 			assert(sizeof(client_addr) == addr_len);
-			printf("Contact: %d.%d.%d.%d:%u\n",
-				client_addr.sin_addr.S_un.S_un_b.s_b1,
-				client_addr.sin_addr.S_un.S_un_b.s_b2,
-				client_addr.sin_addr.S_un.S_un_b.s_b3,
-				client_addr.sin_addr.S_un.S_un_b.s_b4,
-				ntohs(client_addr.sin_port));
+			print(&client_addr);
 			result = handle_client(client, &client_addr, &p);
 			close(client);
 
@@ -337,7 +360,7 @@ int serve(SOCKET server_sock)
 				keep_running = 0;
 			}
 		} else {
-			printf("Error accepting client connection: %d.\n", WSAGetLastError());
+			printf("Error accepting client connection: %d.\n", get_error());
 		}
 	}
 	pool_free(&p);
@@ -346,34 +369,37 @@ int serve(SOCKET server_sock)
 
 int main()
 {
+	int result = 0;
 	if (init_socket_layer() != 0) {
 		printf("Failed to initialize the socket layer\n");
 	}
 	int server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (server_sock != INVALID_SOCKET) {
+	if (server_sock != -1) {
 
 		struct sockaddr_in address;
 		address.sin_family = AF_INET;
 		address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
 		address.sin_port = htons(port);
-		printf("Server will listen on port %hu.\n", server::port);
+		printf("Server will listen on port %hu.\n", port);
 
-		result = bind(server_sock, (SOCKADDR*)&address,
+		result = bind(server_sock, (struct sockaddr*)&address,
 			sizeof(address));
 		if (0 == result) {
 			result = listen(server_sock, SOMAXCONN);
-			if (result != SOCKET_ERROR) {
+			if (result != -1) {
 				result = serve(server_sock);
 			} else {
-				printf("Server socket failed to listen: %d.\n", WSAGetLastError());
+				printf("Server socket failed to listen: %d.\n", get_error());
+				result = -1;
 			}
 		} else {
-			printf("Failed to bind socket: %d", WSAGetLastError());
+			printf("Failed to bind socket: %d\n", get_error());
+			result = -1;
 		}
 
-		closesocket(server_sock);
+		close(server_sock);
 	} else {
-		printf("Could not create server socket: %d", WSAGetLastError());
+		printf("Could not create server socket: %d\n", get_error());
 		result = -1;
 	}
 

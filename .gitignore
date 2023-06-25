@@ -5,3 +5,6 @@
 /.vs
 /out/build/x64-Debug
 build
+*.swp
+server
+*.dSYM
