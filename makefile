@@ -2,11 +2,13 @@
 # for your system.
 include config.mk
 
-.PHONY: all clean
+OUT=server$(OUTEXT)
 
 all: server
 
-server: server.cpp
+$(OUT): server.c
 
 clean:
-	$(RM) server
+	$(RM) $(OUT)
+	
+.PHONY: all clean

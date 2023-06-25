@@ -13,7 +13,7 @@
 int init_socket_layer(void)
 {
 	// Startup winsock.
-	WSAData wsa_data = {0};
+	struct WSAData wsa_data = {0};
 	int result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
 	if (result != 0) {
 		printf("WSA Startup failed: %d.\n", result);
@@ -168,7 +168,7 @@ int str_cmp(const struct str *a, const struct str *b)
 	return strncmp(a->data, b->data, a->len);
 }
 
-int str_cmp(const struct str *a, const char *b)
+int str_cmp_chars(const struct str *a, const char *b)
 {
 	size_t b_len = strlen(b);
 	if (a->len > b_len) {
@@ -253,7 +253,7 @@ struct str_list *split(const struct str *src, const struct str *delimiter, struc
 }
 
 struct request {
-	request_type type;
+	enum request_type type;
 	char path[1024];
 	char format[1024];
 };
@@ -261,9 +261,9 @@ struct request {
 int parse_request(const struct str *data, struct pool *p, struct request *request)
 {
 	char eol_chars[] = "\r\n";
-	const str eol = { strlen(eol_chars), eol_chars };
+	const struct str eol = { strlen(eol_chars), eol_chars };
 	char space_chars[] = " ";
-	const str space = { strlen(space_chars), space_chars };
+	const struct str space = { strlen(space_chars), space_chars };
 	char get[] = "GET";
 
 	struct str header;
@@ -287,7 +287,7 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 		printf("Failed to break up header: \"%s\"\n", header.data);
 		return -1;
 	}
-	if (str_cmp(&tokens->str, get)) {
+	if (str_cmp_chars(&tokens->str, get)) {
 		request->type = GET;
 	}
 
@@ -326,7 +326,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	(void)client_addr;
 
 	char buffer[4096] = {0};
-	ssize_t bytes_rxed = recv(client, buffer, LEN(buffer) - 1, 0);
+	size_t bytes_rxed = recv(client, buffer, LEN(buffer) - 1, 0);
 	if (bytes_rxed == -1) {
 		printf("Failed to read from client: %d.\n", get_error());
 		return -1;
@@ -341,7 +341,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 
 int serve(int server_sock)
 {
-	struct pool p = {};
+	struct pool p = {0};
 	int result = 0;
 	int keep_running = 1;
 
@@ -352,7 +352,7 @@ int serve(int server_sock)
 	while (keep_running) {
 		struct sockaddr_in client_addr;
 		memset(&client_addr, 0, sizeof(client_addr));
-		socklen_t addr_len = sizeof(client_addr);
+		size_t addr_len = sizeof(client_addr);
 		printf("Waiting for connection...");
 		int client = accept(server_sock, (struct sockaddr*)&client_addr, &addr_len);
 		printf("contact detected.\n");
