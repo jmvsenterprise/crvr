@@ -109,7 +109,8 @@ void pool_free(struct pool *p)
 
 void *pool_alloc(struct pool *p, size_t byte_amount)
 {
-	size_t alignment = byte_amount % sizeof(void*);
+	size_t alignment = sizeof(void*) - byte_amount % sizeof(void*);
+	printf("Allocating %lu alignment=%lu actual=%lu\n", byte_amount, alignment, byte_amount + alignment);
 	byte_amount += alignment;
 	if ((p->offset + byte_amount) > p->cap) {
 		return NULL;
@@ -209,6 +210,7 @@ struct str_list {
 
 struct str_list *split(const struct str *src, const struct str *delimiter, struct pool *p)
 {
+	struct str moving_src = *src;
 	struct str_list *root = NULL;
 	struct str_list *end = NULL;
 	struct str_list *next = NULL;
@@ -217,21 +219,26 @@ struct str_list *split(const struct str *src, const struct str *delimiter, struc
 	size_t word_size;
 
 	while (eow != (size_t)-1) {
-		eow = str_find_substr(delimiter, src);
+		eow = str_find_substr(delimiter, &moving_src);
 		// Create the new str_list.
 		next = pool_alloc_type(p, struct str_list);
+		if (!next) {
+			printf("Failed to allocate str_list.\n");
+			return NULL;
+		}
 		assert(eow > last);
 		if (eow == (size_t)-1) {
 			word_size = src->len - last;
 		} else {
 			word_size = eow - last;
 		}
-		int bytes_allocated = str_alloc(&next->str, word_size, p);
-		if (bytes_allocated == ENOMEM) {
+		if (str_alloc(&next->str, word_size, p) == ENOMEM) {
 			return NULL;
 		}
 		memcpy(next->str.data, src->data + last, next->str.len);
 
+		// Advance our src pointer now that we've copied the data.
+		moving_src.data += word_size + 1;
 
 		// Attach the str_list to the list of str_lists.
 		if (end) {
