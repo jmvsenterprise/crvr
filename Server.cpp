@@ -1,15 +1,50 @@
 #include <assert.h>
 #include <errno.h>
+#include <limits.h>
 #include <stdint.h>
-#include <winsock2.h>
 #include <stdio.h>
-#include <iostream>
+#include <stdlib.h>
+#include <string.h>
+
+#ifdef WINDOWS
+#include <winsock2.h>
+
+int init_socket_layer(void)
+{
+	// Startup winsock.
+	WSAData wsa_data = {0};
+	int result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+	if (result != 0) {
+		printf("WSA Startup failed: %d.\n", result);
+		return -1;
+	}
+	return 0;
+}
+
+void cleanup_socket_layer(void)
+{
+	WSACleanup();
+}
+
+#elif MAC
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+
+int init_socket_layer(void)
+{
+  return 0;
+}
+
+void cleanup_socket_layer(void)
+{
+}
+
+#endif
 
 #define GIGABYTE (1000000000)
 
 #define LEN(p) (sizeof(p) / sizeof(p[0]))
-
-namespace server {
 
 const unsigned short port = 8080;
 
@@ -284,9 +319,9 @@ int serve(SOCKET server_sock)
 		struct sockaddr_in client_addr = {0};
 		int addr_len = sizeof(client_addr);
 		printf("Waiting for connection...");
-		SOCKET client = accept(server_sock, (SOCKADDR*)&client_addr, &addr_len);
+		int client = accept(server_sock, (struct SOCKADDR*)&client_addr, &addr_len);
 		printf("contact detected.\n");
-		if (client != INVALID_SOCKET) {
+		if (client != -1) {
 			assert(sizeof(client_addr) == addr_len);
 			printf("Contact: %d.%d.%d.%d:%u\n",
 				client_addr.sin_addr.S_un.S_un_b.s_b1,
@@ -295,7 +330,7 @@ int serve(SOCKET server_sock)
 				client_addr.sin_addr.S_un.S_un_b.s_b4,
 				ntohs(client_addr.sin_port));
 			result = handle_client(client, &client_addr, &p);
-			closesocket(client);
+			close(client);
 
 			if (result != 0) {
 				printf("Handling the client failed: %d\n", result);
@@ -309,32 +344,26 @@ int serve(SOCKET server_sock)
 	return result;
 }
 
-} // End namespace server
-
 int main()
 {
-	// Startup winsock.
-	WSAData wsa_data = {0};
-	int result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
-	if (result != 0) {
-		printf("WSA Startup failed: %d.\n", result);
-		return -1;
+	if (init_socket_layer() != 0) {
+		printf("Failed to initialize the socket layer\n");
 	}
-
-	SOCKET server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	int server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (server_sock != INVALID_SOCKET) {
 
 		struct sockaddr_in address;
 		address.sin_family = AF_INET;
-		address.sin_addr.s_addr = inet_addr("127.0.0.1");
-		address.sin_port = htons(server::port);
+		address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		address.sin_port = htons(port);
 		printf("Server will listen on port %hu.\n", server::port);
 
-		result = bind(server_sock, (SOCKADDR*)&address, sizeof(address));
+		result = bind(server_sock, (SOCKADDR*)&address,
+			sizeof(address));
 		if (0 == result) {
 			result = listen(server_sock, SOMAXCONN);
 			if (result != SOCKET_ERROR) {
-				result = server::serve(server_sock);
+				result = serve(server_sock);
 			} else {
 				printf("Server socket failed to listen: %d.\n", WSAGetLastError());
 			}
@@ -348,6 +377,6 @@ int main()
 		result = -1;
 	}
 
-	WSACleanup();
+	cleanup_socket_layer();
 	return result;
 }
