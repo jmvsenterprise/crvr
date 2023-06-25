@@ -335,6 +335,12 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 		printf("Did not find path in header: \"%s\"\n", header.data);
 		return -1;
 	}
+	// Remove the '/'.
+	if (tokens->str.data[0] == '/') {
+		tokens->str.data++;
+		assert(tokens->str.len > 0);
+		tokens->str.len--;
+	}
 	size_t path_len = LEN(request->path) - 1;
 	if (tokens->str.len < path_len) {
 		path_len = tokens->str.len;
@@ -360,6 +366,43 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 	return -1;
 }
 
+int send_404(int client)
+{
+	char header[] = "HTTP/1.1 404 NOT FOUND";
+	long bytes_written = write(client, header, LEN(header), 0);
+	if (bytes_written != LEN(header)) {
+		printf("Failed to send 404. Only sent %lu of %lu bytes.\n",
+			bytes_written, LEN(header));
+		return -1;
+	}
+	return 0;
+}
+
+int send_file(FILE *f, int client, struct pool *p)
+{
+	const char header[] =
+		"HTTP/1.1 200 OK\r\nContent-Lenght: %lu\r\n\r\n%s";
+
+
+	contents);
+
+}
+
+/*
+ * Load the file the client requested and return it, otherwise return an error
+ * page to the client.
+ */
+int handle_request(int client, struct request *request, struct pool *p)
+{
+	FILE *f = fopen(request->path, "r");
+	if (!f) {
+		return send_404(client);
+	}
+	int result = send_file(client, f, p);
+	fclose(f);
+	return result;
+}
+
 int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 {
 	(void)client_addr;
@@ -373,7 +416,11 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 
 	struct request request;
 	struct str str = { strlen(buffer), buffer };
-	parse_request(&str, p, &request);
+	if (parse_request(&str, p, &request) != 0) {
+		printf("Failed to parse the client's request.\n");
+		return -1;
+	}
+	handle_request(&request, p);
 
 	return -1;
 }
@@ -403,7 +450,8 @@ int serve(int server_sock)
 			close(client);
 
 			if (result != 0) {
-				printf("Handling the client failed: %d\n", result);
+				printf("Handling the client failed: %d\n",
+					result);
 				keep_running = 0;
 			}
 		} else {
