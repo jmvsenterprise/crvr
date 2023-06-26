@@ -380,12 +380,58 @@ int send_404(int client)
 
 int send_file(FILE *f, int client, struct pool *p)
 {
-	const char header[] =
-		"HTTP/1.1 200 OK\r\nContent-Lenght: %lu\r\n\r\n%s";
+	const char header[] = "HTTP/1.1 200 OK\r\nContent-Lenght: ";
+	if (fseek(f, 0, SEEK_END) != 0) {
+		perror("Failed to seek to the end of the file.\n");
+		return -1;
+	}
+	long file_size = ftell(f);
+	if (file_size == -1) {
+		perror("Failed to read the file size of the file.\n");
+		return -1;
+	}
+	if (fseek(f, 0, SEEK_SET) != 0) {
+		perror("Failed to seek to beginning of the file.\n");
+		return -1;
+	}
 
+	size_t capacity = LEN(header) + file_size + content_length_size + 10;
+	char *contents = pool_alloc_array(p, char, capacity);
+	if (!contents) {
+		printf("Failed to create contents array.\n");
+		return -1;
+	}
+	memset(contents, 0, capacity);
+	// Put the file size in as the content length.
+	int written = snprintf(contents, "%s%lu", header, file_size);
+	if (written < 0) {
+		perror("Failed to write the header to contents.\n");
+		return -1;
+	}
+	written = snprintf(contents + written, "\r\n\r\n");
+	if (written < 0) {
+		perror("Failed to write break between header and contents.\n");
+		return -1;
+	}
 
-	contents);
+	// Now append the file data.
+	size_t chars_read = fread(contents + written, sizeof(*contents),
+		(size_t)file_size, f);
+	if (chars_read != (size_t)file_size) {
+		printf("Failed to read in the entire file: %lu of %ld\n",
+			chars_read, file_size);
+		return -1;
+	}
 
+	size_t bytes_to_send = strlen(contents);
+	ssize_t bytes_sent = write(client, (void*)contents, bytes_to_send);
+	if ((size_t)bytes_sent != bytes_to_send) {
+		printf("Failed to send all of the contents: %lu of %ld.\n",
+			bytes_sent, bytes_to_send);
+		return -1;
+	}
+
+	return 0;
 }
 
 /*
@@ -398,7 +444,7 @@ int handle_request(int client, struct request *request, struct pool *p)
 	if (!f) {
 		return send_404(client);
 	}
-	int result = send_file(client, f, p);
+	int result = send_file(f, client, p);
 	fclose(f);
 	return result;
 }
@@ -420,7 +466,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 		printf("Failed to parse the client's request.\n");
 		return -1;
 	}
-	handle_request(&request, p);
+	handle_request(client, &request, p);
 
 	return -1;
 }
