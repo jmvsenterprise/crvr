@@ -5,6 +5,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <string>
 
 #if WINDOWS
 #include <winsock2.h>
@@ -80,9 +81,9 @@ void print(struct sockaddr_in *address)
 }
 
 struct pool {
-	size_t offset;
-	size_t cap;
-	char *buffer;
+	size_t offset = 0;
+	size_t cap = 0;
+	char *buffer = nullptr;
 };
 
 int pool_init(struct pool *p, size_t desired_size)
@@ -296,7 +297,8 @@ struct request {
 	char format[1024];
 };
 
-int parse_request(const struct str *data, struct pool *p, struct request *request)
+int parse_request(const struct str *data, struct pool *p,
+	struct request *request)
 {
 	char eol_chars[] = "\r\n";
 	const struct str eol = { strlen(eol_chars), eol_chars };
@@ -363,24 +365,24 @@ int parse_request(const struct str *data, struct pool *p, struct request *reques
 	printf("Request type: \"%d\" path: \"%s\" format: \"%s\"\n",
 		request->type, request->path, request->format);
 
-	return -1;
+	return 0;
 }
 
 int send_404(int client)
 {
 	char header[] = "HTTP/1.1 404 NOT FOUND";
-	long bytes_written = write(client, header, LEN(header), 0);
+	long bytes_written = write(client, header, LEN(header));
 	if (bytes_written != LEN(header)) {
 		printf("Failed to send 404. Only sent %lu of %lu bytes.\n",
 			bytes_written, LEN(header));
 		return -1;
 	}
+	printf("Sent 404.\n");
 	return 0;
 }
 
 int send_file(FILE *f, int client, struct pool *p)
 {
-	const char header[] = "HTTP/1.1 200 OK\r\nContent-Lenght: ";
 	if (fseek(f, 0, SEEK_END) != 0) {
 		perror("Failed to seek to the end of the file.\n");
 		return -1;
@@ -395,7 +397,7 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 
-	size_t capacity = LEN(header) + file_size + content_length_size + 10;
+	size_t capacity = (size_t)file_size;
 	char *contents = pool_alloc_array(p, char, capacity);
 	if (!contents) {
 		printf("Failed to create contents array.\n");
@@ -403,19 +405,9 @@ int send_file(FILE *f, int client, struct pool *p)
 	}
 	memset(contents, 0, capacity);
 	// Put the file size in as the content length.
-	int written = snprintf(contents, "%s%lu", header, file_size);
-	if (written < 0) {
-		perror("Failed to write the header to contents.\n");
-		return -1;
-	}
-	written = snprintf(contents + written, "\r\n\r\n");
-	if (written < 0) {
-		perror("Failed to write break between header and contents.\n");
-		return -1;
-	}
 
 	// Now append the file data.
-	size_t chars_read = fread(contents + written, sizeof(*contents),
+	size_t chars_read = fread(contents, sizeof(*contents),
 		(size_t)file_size, f);
 	if (chars_read != (size_t)file_size) {
 		printf("Failed to read in the entire file: %lu of %ld\n",
@@ -423,11 +415,15 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 
-	size_t bytes_to_send = strlen(contents);
-	ssize_t bytes_sent = write(client, (void*)contents, bytes_to_send);
-	if ((size_t)bytes_sent != bytes_to_send) {
+	std::string response{"HTTP/1.1 200 OK\r\nContent-Length: "};
+	response += std::to_string(file_size);
+	response += "\r\n\r\n";
+	response += contents;
+
+	ssize_t bytes_sent = write(client, response.c_str(), response.length());
+	if ((size_t)bytes_sent != response.length()) {
 		printf("Failed to send all of the contents: %lu of %ld.\n",
-			bytes_sent, bytes_to_send);
+			bytes_sent, response.length());
 		return -1;
 	}
 
@@ -440,8 +436,14 @@ int send_file(FILE *f, int client, struct pool *p)
  */
 int handle_request(int client, struct request *request, struct pool *p)
 {
-	FILE *f = fopen(request->path, "r");
+	FILE *f = nullptr;
+	if (strlen(request->path) == 0) {
+		f = fopen("index.html", "r");
+	} else {
+		f = fopen(request->path, "r");
+	}
 	if (!f) {
+		printf("File \"%s\" not found.\n", request->path);
 		return send_404(client);
 	}
 	int result = send_file(f, client, p);
@@ -466,14 +468,12 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 		printf("Failed to parse the client's request.\n");
 		return -1;
 	}
-	handle_request(client, &request, p);
-
-	return -1;
+	return handle_request(client, &request, p);
 }
 
 int serve(int server_sock)
 {
-	struct pool p = {0};
+	struct pool p;
 	int result = 0;
 	int keep_running = 1;
 

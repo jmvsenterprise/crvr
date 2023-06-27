@@ -6,7 +6,7 @@ OUT=server$(OUTEXT)
 
 all: server
 
-$(OUT): server.c
+$(OUT): server.cpp
 
 clean:
 	$(RM) $(OUT)
