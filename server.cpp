@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <string>
+#include <filesystem>
+#include <iostream>
 
 #if WINDOWS
 #include <winsock2.h>
@@ -368,21 +370,42 @@ int parse_request(const struct str *data, struct pool *p,
 	return 0;
 }
 
-int send_404(int client)
+int send(int client, const std::string& header, const std::string& contents)
 {
-	char header[] = "HTTP/1.1 404 NOT FOUND";
-	long bytes_written = write(client, header, LEN(header));
-	if (bytes_written != LEN(header)) {
-		printf("Failed to send 404. Only sent %lu of %lu bytes.\n",
-			bytes_written, LEN(header));
+	static std::string buffer;
+	buffer.clear();
+	buffer += header;
+	buffer += "Content Length: ";
+	buffer += std::to_string(contents.length());
+	buffer += "\r\n\r\n";
+	buffer += contents;
+
+	ssize_t bytes_sent = write(client, buffer.c_str(), buffer.length());
+	if (bytes_sent == -1) {
+		std::cerr << "Failed to write buffer to client! " << errno <<
+			"\n";
 		return -1;
 	}
-	printf("Sent 404.\n");
+	if (static_cast<size_t>(bytes_sent) != buffer.length()) {
+		std::cerr << "Failed to send buffer to client!\nOnly wrote " <<
+			bytes_sent << " of " << buffer.length() << " bytes.\n";
+		return -1;
+	}
 	return 0;
+}
+
+int send_404(int client)
+{
+	static const std::string html{"<html><head><title>Page Not Found</title></head><body><h1>Sorry that page doesn't exist</h1></body></html>"};
+	static const std::string header{"HTTP/1.1 404 NOT FOUND"};
+
+	return send(client, header, html);
 }
 
 int send_file(FILE *f, int client, struct pool *p)
 {
+	(void)p;
+
 	if (fseek(f, 0, SEEK_END) != 0) {
 		perror("Failed to seek to the end of the file.\n");
 		return -1;
@@ -397,37 +420,19 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 
-	size_t capacity = (size_t)file_size;
-	char *contents = pool_alloc_array(p, char, capacity);
-	if (!contents) {
-		printf("Failed to create contents array.\n");
-		return -1;
-	}
-	memset(contents, 0, capacity);
-	// Put the file size in as the content length.
+	std::string contents(static_cast<size_t>(file_size), '\0');
 
-	// Now append the file data.
-	size_t chars_read = fread(contents, sizeof(*contents),
-		(size_t)file_size, f);
-	if (chars_read != (size_t)file_size) {
+	size_t chars_read = fread(contents.data(),
+		sizeof(decltype(contents)::value_type), contents.length(),
+		f);
+	if (chars_read != contents.length()) {
 		printf("Failed to read in the entire file: %lu of %ld\n",
-			chars_read, file_size);
+			chars_read, contents.length());
 		return -1;
 	}
 
-	std::string response{"HTTP/1.1 200 OK\r\nContent-Length: "};
-	response += std::to_string(file_size);
-	response += "\r\n\r\n";
-	response += contents;
-
-	ssize_t bytes_sent = write(client, response.c_str(), response.length());
-	if ((size_t)bytes_sent != response.length()) {
-		printf("Failed to send all of the contents: %lu of %ld.\n",
-			bytes_sent, response.length());
-		return -1;
-	}
-
-	return 0;
+	static const std::string header{"HTTP/1.1 200 OK"};
+	return send(client, header, contents);
 }
 
 /*
@@ -436,14 +441,20 @@ int send_file(FILE *f, int client, struct pool *p)
  */
 int handle_request(int client, struct request *request, struct pool *p)
 {
-	FILE *f = nullptr;
-	if (strlen(request->path) == 0) {
-		f = fopen("index.html", "r");
-	} else {
-		f = fopen(request->path, "r");
+	std::filesystem::path path{request->path};
+	if ((path == "/") || (path.empty())) {
+		path = "index.html";
+		std::cout << "Requested root\n";
 	}
+	if (std::filesystem::is_directory(path)) {
+		path += "index.html";
+		std::cout << "Directory requested.\n";
+	}
+	std::cout << "Getting " << path << "\n";
+	FILE *f = nullptr;
+	f = fopen(path.c_str(), "r");
 	if (!f) {
-		printf("File \"%s\" not found.\n", request->path);
+		std::cerr << "File " << path << " not found.\n";
 		return send_404(client);
 	}
 	int result = send_file(f, client, p);
