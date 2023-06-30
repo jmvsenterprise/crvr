@@ -318,20 +318,19 @@ int parse_request(const std::string& data, request& request)
 		return -1;
 	}
 
-	size_t end_of_path = header.find_first_of(" ");
-	std::string path{header.substr(end_of_type + 1, end_of_path)};
+	size_t end_of_path = header.find_first_of(" ", end_of_type + 1);
 	if (end_of_path == header.npos) {
 		std::cerr << "Request header missing format: " << header <<
 			"\n";
 		return -1;
 	}
-
-	const std::string format{header.substr(end_of_path + 1)};
-
+	std::string path{header.substr(end_of_type + 1, end_of_type +
+		end_of_path)};
 	// If the path has a leading /, get rid of it.
-	if ((path.length() > 0) && (path[0] == '/')) {
-		path.erase(0);
+	if (path[0] == '/') {
+		path.erase(path.begin());
 	}
+	const std::string format{header.substr(end_of_path + 1)};
 
 	if (type == "GET") {
 		request.type = GET;
@@ -421,7 +420,7 @@ int handle_request(int client, struct request *request, struct pool *p)
 	std::filesystem::path path{request->path};
 	if ((path == "/") || (path.empty())) {
 		path = "index.html";
-		std::cout << "Requested root\n";
+		std::cout << "Requested root (" << path << ")\n";
 	}
 	if (std::filesystem::is_directory(path)) {
 		path += "index.html";
