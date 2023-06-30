@@ -310,6 +310,8 @@ int parse_request(const std::string& data, request& request)
 	size_t end_of_line = data.find_first_of("\r\n");
 	const std::string header(data.substr(0, end_of_line));
 
+	std::cout << "header: \"" << header << "\"\n";
+
 	size_t end_of_type = header.find_first_of(" ");
 	const std::string type{header.substr(0, end_of_type)};
 
@@ -317,6 +319,7 @@ int parse_request(const std::string& data, request& request)
 		std::cerr << "Request header missing path: " << header << "\n";
 		return -1;
 	}
+	std::cout << "end of type: " << end_of_type << "\n";
 
 	size_t end_of_path = header.find_first_of(" ", end_of_type + 1);
 	if (end_of_path == header.npos) {
@@ -324,11 +327,14 @@ int parse_request(const std::string& data, request& request)
 			"\n";
 		return -1;
 	}
-	std::string path{header.substr(end_of_type + 1, end_of_type +
-		end_of_path)};
+	std::cout << "end of path: " << end_of_path << "\n";
+	std::string path{header.substr(end_of_type + 1, end_of_path -
+		(end_of_type + 1))};
 	// If the path has a leading /, get rid of it.
+	std::cout << "path: \"" << path << "\"\n";
 	if (path[0] == '/') {
 		path.erase(path.begin());
+		std::cout << "path updated: \"" << path << "\"\n";
 	}
 	const std::string format{header.substr(end_of_path + 1)};
 
