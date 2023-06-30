@@ -295,77 +295,54 @@ struct str_list *split(const struct str *src, const struct str *delimiter,
 
 struct request {
 	enum request_type type;
-	char path[1024];
-	char format[1024];
+	std::string path;
+	std::string format;
 };
 
-int parse_request(const struct str *data, struct pool *p,
-	struct request *request)
+std::ostream& operator<<(std::ostream& os, const request& r)
 {
-	char eol_chars[] = "\r\n";
-	const struct str eol = { strlen(eol_chars), eol_chars };
-	char space_chars[] = " ";
-	const struct str space = { strlen(space_chars), space_chars };
-	char get[] = "GET";
+	return os << "{type:" << r.type << ", path:" << r.path << ", format:" <<
+		r.format << "}";
+}
 
-	struct str header;
+int parse_request(const std::string& data, request& request)
+{
+	size_t end_of_line = data.find_first_of("\r\n");
+	const std::string header(data.substr(0, end_of_line));
 
-	size_t first_eol = str_find_substr(&eol, data);
-	if (first_eol == (size_t)-1) {
-		printf("Did not find header EOL.\n");
+	size_t end_of_type = header.find_first_of(" ");
+	const std::string type{header.substr(0, end_of_type)};
+
+	if (end_of_type == header.npos) {
+		std::cerr << "Request header missing path: " << header << "\n";
 		return -1;
 	}
 
-	if (str_alloc(&header, first_eol, p) != 0) {
-		printf("Failed to allocate header.\n");
+	size_t end_of_path = header.find_first_of(" ");
+	std::string path{header.substr(end_of_type + 1, end_of_path)};
+	if (end_of_path == header.npos) {
+		std::cerr << "Request header missing format: " << header <<
+			"\n";
 		return -1;
 	}
 
-	(void)str_cpy(data, &header);
+	const std::string format{header.substr(end_of_path + 1)};
 
-	// Figure out what type of request this is.
-	struct str_list *tokens = split(&header, &space, p);
-	if (!tokens) {
-		printf("Failed to break up header: \"%s\"\n", header.data);
+	// If the path has a leading /, get rid of it.
+	if ((path.length() > 0) && (path[0] == '/')) {
+		path.erase(0);
+	}
+
+	if (type == "GET") {
+		request.type = GET;
+	} else {
+		std::cerr << "Unrecognized request type: " << type << "\n";
 		return -1;
 	}
-	if (str_cmp_chars(&tokens->str, get)) {
-		request->type = GET;
-	}
+	request.path = path;
+	request.format = format;
 
-	// Load the path.
-	tokens = tokens->next;
-	if (!tokens) {
-		printf("Did not find path in header: \"%s\"\n", header.data);
-		return -1;
-	}
-	// Remove the '/'.
-	if (tokens->str.data[0] == '/') {
-		tokens->str.data++;
-		assert(tokens->str.len > 0);
-		tokens->str.len--;
-	}
-	size_t path_len = LEN(request->path) - 1;
-	if (tokens->str.len < path_len) {
-		path_len = tokens->str.len;
-	}
-	memcpy(request->path, tokens->str.data, path_len);
-
-	// Load the request version.
-	tokens = tokens->next;
-	if (!tokens) {
-		printf("Did not find the format in header: \"%s\"\n",
-			header.data);
-		return -1;
-	}
-	size_t format_len = LEN(request->format) - 1;
-	if (format_len > tokens->str.len) {
-		format_len = tokens->str.len;
-	}
-	memcpy(request->format, tokens->str.data, format_len);
-
-	printf("Request type: \"%d\" path: \"%s\" format: \"%s\"\n",
-		request->type, request->path, request->format);
+	std::cout << "New request: " << request << "\n";
 
 	return 0;
 }
@@ -474,8 +451,8 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	}
 
 	struct request request;
-	struct str str = { strlen(buffer), buffer };
-	if (parse_request(&str, p, &request) != 0) {
+	std::string data{buffer};
+	if (parse_request(buffer, request) != 0) {
 		printf("Failed to parse the client's request.\n");
 		return -1;
 	}
