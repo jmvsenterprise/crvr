@@ -340,6 +340,8 @@ int parse_request(const std::string& data, request& request)
 
 	if (type == "GET") {
 		request.type = GET;
+	} else if (type == "POST") {
+		request.type = POST;
 	} else {
 		std::cerr << "Unrecognized request type: " << type << "\n";
 		return -1;
@@ -449,6 +451,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	(void)client_addr;
 
 	char buffer[4096] = {0};
+	memset(buffer, 0, sizeof(buffer));
 	size_t bytes_rxed = (size_t)recv(client, buffer, LEN(buffer) - 1, 0);
 	if (bytes_rxed == (size_t)-1) {
 		printf("Failed to read from client: %d.\n", get_error());
@@ -460,6 +463,10 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	if (parse_request(buffer, request) != 0) {
 		printf("Failed to parse the client's request.\n");
 		return -1;
+	}
+	if ((request.path == "?") || (request.type == POST)) {
+		std::cout << "POST? requested. Dumping full buffer:\n" <<
+			buffer << "\n";
 	}
 	return handle_request(client, &request, p);
 }
