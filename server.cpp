@@ -450,7 +450,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 {
 	(void)client_addr;
 
-	char buffer[4096] = {0};
+	char buffer[8192] = {0};
 	memset(buffer, 0, sizeof(buffer));
 	size_t bytes_rxed = (size_t)recv(client, buffer, LEN(buffer) - 1, 0);
 	if (bytes_rxed == (size_t)-1) {
