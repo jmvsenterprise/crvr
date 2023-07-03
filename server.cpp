@@ -295,14 +295,55 @@ struct str_list *split(const struct str *src, const struct str *delimiter,
 
 struct request {
 	enum request_type type;
-	std::string path;
-	std::string format;
+	char path[256];
+	char format[256];
 };
 
 std::ostream& operator<<(std::ostream& os, const request& r)
 {
 	return os << "{type:" << r.type << ", path:" << r.path << ", format:" <<
 		r.format << "}";
+}
+
+int parse_request(char *data, struct request *request)
+{
+	char *lasts;
+	char *header = strtok_r(data, "\r\n", &lasts);
+	if (!header) {
+		printf("Did not find the header in \"%s\"", data);
+		return EINVAL;
+	}
+	// Break up the header. Don't need lasts from before, so reuse it.
+	char *token = strtok_r(header, " ", &lasts);
+	for (size_t token_count = 0; token; ++token_count) {
+		switch (token_count) {
+		case 0:
+			if (strcmp(token, "GET") == 0) {
+				request->type = GET;
+			} else if (strcmp(token, "POST") == 0) {
+				request->type = POST;
+			} else {
+				printf("Unrecognized type \"%s\".\n", token);
+				return EINVAL;
+			}
+			break;
+		case 1:
+			// If the first character is a /, drop it.
+			if (token[0] == '/') {
+				token++;
+			}
+			strncpy(request->path, token, LEN(request->path));
+			break;
+		case 2:
+			strncpy(request->format, token, LEN(request->format));
+			break;
+		default:
+			printf("Too many tokens in header!\n");
+			return EINVAL;
+		}
+		token = strtok_r(header, " ", &lasts);
+	}
+	return 0;
 }
 
 int parse_request(const std::string& data, request& request)
@@ -346,8 +387,8 @@ int parse_request(const std::string& data, request& request)
 		std::cerr << "Unrecognized request type: " << type << "\n";
 		return -1;
 	}
-	request.path = path;
-	request.format = format;
+	strncpy(request.path, path.c_str(), LEN(request.path));
+	strncpy(request.format, format.c_str(), LEN(request.format));
 
 	std::cout << "New request: " << request << "\n";
 
@@ -464,7 +505,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 		printf("Failed to parse the client's request.\n");
 		return -1;
 	}
-	if ((request.path == "?") || (request.type == POST)) {
+	if ((strcmp(request.path, "?") == 0) || (request.type == POST)) {
 		std::cout << "POST? requested. Dumping full buffer:\n" <<
 			buffer << "\n";
 	}
