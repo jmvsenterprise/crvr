@@ -305,17 +305,19 @@ std::ostream& operator<<(std::ostream& os, const request& r)
 		r.format << "}";
 }
 
-int parse_request(char *data, struct request *request)
+int parse_request(char *data, struct request *request, char **remaining_data)
 {
-	char *lasts;
-	char *header = strtok_r(data, "\r\n", &lasts);
+	char *next_token;
+	char *token;
+	char *header = strtok_r(data, "\r\n", remaining_data);
 	if (!header) {
 		printf("Did not find the header in \"%s\"", data);
 		return EINVAL;
 	}
 	// Break up the header. Don't need lasts from before, so reuse it.
-	char *token = strtok_r(header, " ", &lasts);
+	token = strtok_r(header, " ", &next_token);
 	for (size_t token_count = 0; token; ++token_count) {
+		printf("token=\"%s\"\n", token);
 		switch (token_count) {
 		case 0:
 			if (strcmp(token, "GET") == 0) {
@@ -341,7 +343,7 @@ int parse_request(char *data, struct request *request)
 			printf("Too many tokens in header!\n");
 			return EINVAL;
 		}
-		token = strtok_r(header, " ", &lasts);
+		token = strtok_r(NULL, " ", &next_token);
 	}
 	return 0;
 }
@@ -500,14 +502,14 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	}
 
 	struct request request;
-	std::string data{buffer};
-	if (parse_request(buffer, request) != 0) {
+	char *remaining_buf;
+	if (parse_request(buffer, &request, &remaining_buf) != 0) {
 		printf("Failed to parse the client's request.\n");
 		return -1;
 	}
 	if ((strcmp(request.path, "?") == 0) || (request.type == POST)) {
 		std::cout << "POST? requested. Dumping full buffer:\n" <<
-			buffer << "\n";
+			remaining_buf << "\n";
 	}
 	return handle_request(client, &request, p);
 }
