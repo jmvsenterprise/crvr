@@ -10,3 +10,4 @@ server
 *.dSYM
 config.mk
 *.obj
+*.o

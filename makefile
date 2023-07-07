@@ -6,9 +6,11 @@ OUT=server$(OUTEXT)
 
 all: server
 
-$(OUT): server.cpp
+$(OUT): server.$(OBJ) pool.$(OBJ)
+	$(CXX) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
 clean:
 	$(RM) $(OUT)
+	$(RM) *.$(OBJ)
 	
 .PHONY: all clean

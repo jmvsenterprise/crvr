@@ -9,6 +9,10 @@
 #include <filesystem>
 #include <iostream>
 
+extern "C" {
+#include "pool.h"
+}
+
 #if WINDOWS
 #include <winsock2.h>
 #pragma message("Building for windows")
@@ -81,55 +85,6 @@ void print(struct sockaddr_in *address)
 	const unsigned short port = ntohs(address->sin_port);
 	printf("Contact: %u.%u.%u.%u:%u\n", byte4, byte3, byte2, byte1, port);
 }
-
-struct pool {
-	size_t offset = 0;
-	size_t cap = 0;
-	char *buffer = nullptr;
-};
-
-int pool_init(struct pool *p, size_t desired_size)
-{
-	assert(p && (p->buffer == NULL));
-	p->offset = 0;
-	p->cap = desired_size;
-	p->buffer = (char*)malloc(p->cap);
-
-	if (!p->buffer) {
-		return errno;
-	}
-	return 0;
-}
-
-void pool_free(struct pool *p)
-{
-	if (p && p->buffer) {
-		free(p->buffer);
-		p->buffer = NULL;
-	}
-	p->offset = p->cap = 0;
-}
-
-void *pool_alloc(struct pool *p, size_t byte_amount)
-{
-	size_t alignment = sizeof(void*) - byte_amount % sizeof(void*);
-	/*
-	printf("Allocating %lu alignment=%lu actual=%lu\n", byte_amount,
-		alignment, byte_amount + alignment);
-	*/
-	byte_amount += alignment;
-	if ((p->offset + byte_amount) > p->cap) {
-		return NULL;
-	}
-	assert(p->buffer);
-	void *allocation = (void*)(p->buffer + p->offset);
-	p->offset += byte_amount;
-	return allocation;
-}
-
-#define pool_alloc_type(pool, type) (type*)pool_alloc(pool, sizeof(type))
-
-#define pool_alloc_array(pool, type, count) (type*)pool_alloc(pool, sizeof(type) * count)
 
 struct request {
 	enum request_type type;
@@ -229,8 +184,19 @@ int send(int client, const std::string& header, const std::string& contents)
 
 int send_404(int client)
 {
-	static const std::string html{"<html><head><title>Page Not Found</title></head><body><h1>Sorry that page doesn't exist</h1></body></html>"};
-	static const std::string header{"HTTP/1.1 404 NOT FOUND"};
+	static const std::string html(
+		"<html>"
+		"  <head>"
+		"    <title>Page Not Found</title>"
+		"  </head>"
+		"  <body>"
+		"    <h1>Sorry that page doesn't exist</h1>"
+		"  </body>"
+		"</html>"
+	);
+	static const std::string header(
+		"HTTP/1.1 404 NOT FOUND"
+	);
 
 	return send(client, header, html);
 }
@@ -253,18 +219,20 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 
-	std::string contents(static_cast<size_t>(file_size), '\0');
+	std::string contents(static_cast<size_t>(file_size),
+		'\0');
 
-	size_t chars_read = fread(contents.data(),
-		sizeof(decltype(contents)::value_type), contents.length(),
-		f);
+	size_t chars_read = fread(
+		reinterpret_cast<void*>(contents.data()),
+		sizeof(decltype(contents)::value_type),
+		contents.length(), f);
 	if (chars_read != contents.length()) {
 		printf("Failed to read in the entire file: %lu of %ld\n",
 			chars_read, contents.length());
 		return -1;
 	}
 
-	static const std::string header{"HTTP/1.1 200 OK"};
+	static const std::string header("HTTP/1.1 200 OK");
 	return send(client, header, contents);
 }
 
@@ -272,9 +240,10 @@ int send_file(FILE *f, int client, struct pool *p)
  * Load the file the client requested and return it, otherwise return an error
  * page to the client.
  */
-int handle_request(int client, struct request *request, struct pool *p)
+int handle_request(int client, struct request *request,
+	struct pool *p)
 {
-	std::filesystem::path path{request->path};
+	std::filesystem::path path(request->path);
 	if ((path == "/") || (path.empty())) {
 		path = "index.html";
 		std::cout << "Requested root (" << path << ")\n";
