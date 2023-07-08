@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(server CXX C)
+project(server CXX)
 
 add_executable(server "")
 add_compile_definitions(
@@ -9,5 +9,8 @@ set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -std=c++17 -Wall -Wextra -Werror -Wconve
 target_sources(server
 	PRIVATE
 		server.cpp
-		pool.c
+		pool.cpp
 )
+
+file(GLOB html_files ${CMAKE_CURRENT_SOURCE_DIR}/*.html)
+file(COPY ${html_files} DESTINATION ${CMAKE_CURRENT_BINARY_DIR})

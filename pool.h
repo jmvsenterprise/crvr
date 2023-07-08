@@ -1,9 +1,9 @@
 #include <stdlib.h>
 
 struct pool {
-	size_t offset;
-	size_t cap;
-	char *buffer;
+	size_t offset = 0;
+	size_t cap = 0;
+	char *buffer = nullptr;
 };
 
 int pool_init(struct pool *p, size_t desired_size);

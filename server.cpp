@@ -9,9 +9,7 @@
 #include <filesystem>
 #include <iostream>
 
-extern "C" {
 #include "pool.h"
-}
 
 #if WINDOWS
 #include <winsock2.h>
@@ -70,11 +68,6 @@ int get_error(void)
 
 const unsigned short port = 8080;
 
-enum request_type {
-	GET,
-	POST
-};
-
 void print(struct sockaddr_in *address)
 {
 	const unsigned ip = ntohl(address->sin_addr.s_addr);
@@ -86,76 +79,97 @@ void print(struct sockaddr_in *address)
 	printf("Contact: %u.%u.%u.%u:%u\n", byte4, byte3, byte2, byte1, port);
 }
 
-struct request {
-	enum request_type type;
-	char path[256];
-	char format[256];
-	char form_data[256];
+struct Request {
+	enum class Type {
+		Get,
+		Post
+	};
+
+	Type type;
+	std::filesystem::path path;
+	std::string format;
+	std::string parameters;
 };
 
-std::ostream& operator<<(std::ostream& os, const request& r)
+std::ostream& operator<<(std::ostream& os, const Request::Type type)
 {
-	return os << "{type:" << r.type << ", path:" << r.path << ", format:" <<
-		r.format << "}";
+	switch (type) {
+	case Request::Type::Get:
+		return os << "GET";
+	case Request::Type::Post:
+		return os << "POST";
+	default:
+		return os << "Unrecognized type " <<
+			static_cast<unsigned>(type);
+	}
 }
 
-int parse_request(char *data, struct request *request)
+std::ostream& operator<<(std::ostream& os, const Request& r)
 {
-	char *next_token;
-	char *token;
-	char *header_end = strstr(data, "\r\n");
-	if (header_end) {
-		// Temporarily zero out the end of the header so we can parse
-		// it with str functions.
-		*header_end = '\0';
-		header_end += 2; // Move past 0 and the \n.
+	return os << "{type:" << r.type << ", path:" << r.path
+		<< ", format:" << r.format << "}";
+}
+
+int parse_request(char *data, Request& request)
+{
+	std::string buffer(data);
+
+	size_t end_of_header = buffer.find_first_of("\r\n");
+	std::string header;
+	if (end_of_header == buffer.npos) {
+		header = buffer;
+	} else {
+		header = buffer.substr(0, end_of_header);
 	}
-	// Break up the header. Don't need lasts from before, so reuse it.
-	token = strtok_r(data, " ", &next_token);
-	int result = 0;
-	for (size_t token_count = 0; (result == 0) && token; ++token_count) {
-		printf("token=\"%s\"\n", token);
-		switch (token_count) {
-		case 0:
-			if (strcmp(token, "GET") == 0) {
-				request->type = GET;
-			} else if (strcmp(token, "POST") == 0) {
-				request->type = POST;
-			} else {
-				printf("Unrecognized type \"%s\".\n", token);
-				result = EINVAL;
-			}
-			break;
-		case 1:
-			// If the first character is a /, drop it.
-			if (token[0] == '/') {
-				token++;
-			}
-			strncpy(request->path, token, LEN(request->path));
-			break;
-		case 2:
-			strncpy(request->format, token, LEN(request->format));
-			break;
-		default:
-			printf("Too many tokens in header!\n");
-			result = EINVAL;
-		}
-		token = strtok_r(NULL, " ", &next_token);
+
+	// Break up the header.
+	size_t end_of_type = header.find_first_of(" ");
+	std::string type = header.substr(0, end_of_type);
+
+	size_t end_of_path = header.find_first_of(" ", end_of_type + 1);
+	std::string path = header.substr(end_of_type + 1,
+		(end_of_path - end_of_type - 1));
+
+	request.format = header.substr(end_of_path + 1);	
+
+	if (type == "GET") {
+		request.type = Request::Type::Get;
+	} else if (type == "POST") {
+		request.type = Request::Type::Post;
+	} else {
+		std::cerr << "Unrecognized request type \"" << type << "\"\n";
+		return EINVAL;
 	}
-	// If it is a POST request look for form arguments.
-	if (request->type == POST) {
-		char *arg_start = strstr(header_end, "\r\n\r\n");
-		if (arg_start) {
-			// Move past the \r\n\r\n.
-			arg_start += 4;
-			strncpy(request->form_data, arg_start,
-				LEN(request->form_data));
-			printf("Found arguments: \"%s\"\n", request->form_data);
-		} else {
-			printf("No arguments found:\n\"%s\"\n", header_end);
-		}
+
+	if (path.empty() || (path == "/")) {
+		path = "index.html";
+	} else if (path[0] == '/') {
+		path.erase(path.begin());
 	}
-	return result;
+	request.path = path;
+	if (std::filesystem::is_directory(request.path)) {
+		request.path += "index.html";
+		std::cout << "Directory requested.\n";
+	}
+
+	if (request.format != "HTTP/1.1") {
+		std::cerr << "Unrecognized format \"" << request.format <<
+			"\"\n";
+		return EINVAL;
+	}
+
+	if (request.type == Request::Type::Post) {
+		// Find the parameters.
+		static const std::string param_delimiter = "\r\n\r\n";
+		size_t param_start = buffer.find_first_of(param_delimiter,
+			end_of_header + 1);
+		request.parameters = buffer.substr(param_start +
+			param_delimiter.length());
+	}
+
+	std::cout << "Request is " << request << "\n";
+
+	return 0;
 }
 
 int send(int client, const std::string& header, const std::string& contents)
@@ -201,7 +215,7 @@ int send_404(int client)
 	return send(client, header, html);
 }
 
-int send_file(FILE *f, int client, struct pool *p)
+int send_file(FILE *f, int client, pool& p)
 {
 	(void)p;
 
@@ -240,23 +254,13 @@ int send_file(FILE *f, int client, struct pool *p)
  * Load the file the client requested and return it, otherwise return an error
  * page to the client.
  */
-int handle_request(int client, struct request *request,
-	struct pool *p)
+int handle_get_request(int client, Request& request, pool& p)
 {
-	std::filesystem::path path(request->path);
-	if ((path == "/") || (path.empty())) {
-		path = "index.html";
-		std::cout << "Requested root (" << path << ")\n";
-	}
-	if (std::filesystem::is_directory(path)) {
-		path += "index.html";
-		std::cout << "Directory requested.\n";
-	}
-	std::cout << "Getting " << path << "\n";
+	std::cout << "Getting " << request.path << "\n";
 	FILE *f = nullptr;
-	f = fopen(path.c_str(), "r");
+	f = fopen(request.path.c_str(), "r");
 	if (!f) {
-		std::cerr << "File " << path << " not found.\n";
+		std::cerr << "File " << request.path << " not found.\n";
 		return send_404(client);
 	}
 	int result = send_file(f, client, p);
@@ -264,7 +268,14 @@ int handle_request(int client, struct request *request,
 	return result;
 }
 
-int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
+int handle_post_request([[maybe_unused]] int client, Request& request,
+	[[maybe_unused]] pool& p)
+{
+	std::cout << "Posted parameters: \"" << request.parameters << "\"\n";
+	return EINVAL;
+}
+
+int handle_client(int client, struct sockaddr_in *client_addr, pool& p)
 {
 	(void)client_addr;
 
@@ -276,12 +287,23 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 		return -1;
 	}
 
-	struct request request;
-	if (parse_request(buffer, &request) != 0) {
-		printf("Failed to parse the client's request.\n");
+	Request request;
+	if (parse_request(buffer, request) != 0) {
+		std::cerr << "Failed to parse the client's request.\n" <<
+			"Buffer was:\n" << buffer << "\n";
 		return -1;
 	}
-	return handle_request(client, &request, p);
+	int result;
+	if (request.type == Request::Type::Get) {
+		result = handle_get_request(client, request, p);
+	} else {
+		result = handle_post_request(client, request, p);
+	}
+	if (result != 0) {
+		std::cerr << "Failed to handle client: " << result <<
+			"\nBuffer was:\n" << buffer << "\n";
+	}
+	return result;
 }
 
 int serve(int server_sock)
@@ -305,7 +327,7 @@ int serve(int server_sock)
 		if (client != -1) {
 			assert(sizeof(client_addr) == addr_len);
 			print(&client_addr);
-			result = handle_client(client, &client_addr, &p);
+			result = handle_client(client, &client_addr, p);
 			close(client);
 
 			if (result != 0) {
