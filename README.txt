@@ -1,10 +1,21 @@
-ASL
-===
+WEBSERVER
+---------
 
 This program creates a webserver for personal use.
 
-## PLAN
+For now this server is just going to work for me to serve me a website I can
+spin up when I need that lets me study my American Sign Language signs using
+spaced repetition learning. Yes, I could use various apps to do this for me but
+I'm curious about how all this works so I wanted to have a go at creating a
+webserver from scratch.
 
+For now this serves very specific files, but once I've got it working for my
+use case I have a few ideas for possible expansion which I may, or may not,
+persue. Details follow.
+
+
+THE PLAN
+--------
 What I think I can do is have the webserver load a shared object file as an
 application. The shared object file would need to provide the following
 functions:
