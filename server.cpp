@@ -123,133 +123,6 @@ std::ostream& operator<<(std::ostream& os, const struct request& r)
 		<< ", format:" << r.format << "}";
 }
 
-/*
-int parse_request(char *data, struct request *request)
-{
-	std::string buffer(data);
-
-	size_t end_of_header = buffer.find_first_of("\r\n");
-	std::string header;
-	if (end_of_header == buffer.npos) {
-		header = buffer;
-	} else {
-		header = buffer.substr(0, end_of_header);
-	}
-
-	// Break up the header.
-	size_t end_of_type = header.find_first_of(" ");
-	std::string type = header.substr(0, end_of_type);
-
-	size_t end_of_path = header.find_first_of(" ", end_of_type + 1);
-	std::string path = header.substr(end_of_type + 1,
-		(end_of_path - end_of_type - 1));
-
-	strncpy(request->format, header.c_str() + end_of_path + 1,
-		LEN(request->format));	
-
-	if (type == "GET") {
-		request->type = GET;
-	} else if (type == "POST") {
-		request->type = POST;
-	} else {
-		std::cerr << "Unrecognized request type \"" << type << "\"\n";
-		return EINVAL;
-	}
-
-	if (path.empty() || (path == "/")) {
-		path = "index.html";
-	} else if (path[0] == '/') {
-		path.erase(path.begin());
-	}
-	strncpy(request->path, path.c_str(), LEN(request->path));
-	if (std::filesystem::is_directory(request->path)) {
-		strlcat(request->path, "index.html", LEN(request->path));
-		std::cout << "Directory requested.\n";
-	}
-
-	if (strncmp(request->format, "HTTP/1.1", LEN(request->format)) != 0) {
-		std::cerr << "Unrecognized format \"" << request->format <<
-			"\"\n";
-		return EINVAL;
-	}
-
-	if (request->type == POST) {
-		// Find the parameters.
-		static const std::string param_delimiter = "\r\n\r\n";
-		size_t param_start = buffer.find_first_of(param_delimiter,
-			end_of_header + 1);
-		strncpy(request->parameters, buffer.c_str() + param_start +
-			param_delimiter.length(), LEN(request->parameters));
-	}
-
-	std::cout << "Request is " << request << "\n";
-
-	return 0;
-}
-*/
-
-/*
-int parse_request_c(char *data, struct request *request)
-{
-	char *next_token;
-	char *token;
-	char *header_end = strstr(data, "\r\n");
-	if (header_end) {
-		// Temporarily zero out the end of the header so we can parse
-		// it with str functions.
-		*header_end = '\0';
-		header_end += 2; // Move past 0 and the \n.
- 	}
-	// Break up the header. Don't need lasts from before, so reuse it.
-	token = strtok_r(data, " ", &next_token);
-	int result = 0;
-	for (size_t token_count = 0; (result == 0) && token; ++token_count) {
-		printf("token=\"%s\"\n", token);
-		switch (token_count) {
-		case 0:
-			if (strcmp(token, "GET") == 0) {
-				request->type = GET;
-			} else if (strcmp(token, "POST") == 0) {
-				request->type = POST;
-			} else {
-				printf("Unrecognized type \"%s\".\n", token);
-				result = EINVAL;
-			}
-			break;
-		case 1:
-			// If the first character is a /, drop it.
-			if (token[0] == '/') {
-				token++;
-			}
-			strncpy(request->path, token, LEN(request->path));
-			break;
-		case 2:
-			strncpy(request->format, token, LEN(request->format));
-			break;
-		default:
-			printf("Too many tokens in header!\n");
-			result = EINVAL;
-		}
-		token = strtok_r(NULL, " ", &next_token);
- 	}
-	// If it is a POST request look for form arguments.
-	if (request->type == POST) {
-		char *arg_start = strstr(header_end, "\r\n\r\n");
-		if (arg_start) {
-			// Move past the \r\n\r\n.
-			arg_start += 4;
-			strncpy(request->parameters, arg_start,
-				LEN(request->parameters));
-			printf("Found arguments: \"%s\"\n",
-				request->parameters);
-		} else {
-			printf("No arguments found:\n\"%s\"\n", header_end);
-		}
- 	}
-	return result;
-}
-*/
-
 int parse_request_buffer(struct request *request)
 {
 	const char eol[] = "\r\n";
@@ -485,10 +358,12 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 	return result;
 }
 
-int handle_post_request([[maybe_unused]] int client, struct request *request,
-	[[maybe_unused]] struct pool *p)
+int handle_post_request(int client, struct request *request, struct pool *p)
 {
-	std::cout << "Posted parameters: \"" << request->parameters << "\"\n";
+	(void)client;
+	(void)p;
+	printf("parameters length: %lu. parameters:\n=====\n%s\n=====\n",
+		strlen(request->parameters), request->parameters);
 	return EINVAL;
 }
 
