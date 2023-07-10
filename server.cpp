@@ -67,6 +67,7 @@ int get_error(void)
 #define GIGABYTE (1000000000)
 
 #define LEN(p) (sizeof(p) / sizeof(p[0]))
+#define STRMAX(p) (LEN(p) - 1)
 
 const unsigned short port = 8080;
 
@@ -93,8 +94,14 @@ enum request_type {
 struct request {
 	enum request_type type;
 	char path[256];
-	char format[256];
-	char parameters[256];
+	char *format;
+	size_t header_count;
+	struct header {
+		char *key;
+		char *value;
+	} headers[20];
+	char buffer[1024];
+	char *parameters;
 };
 
 std::ostream& operator<<(std::ostream& os, const enum request_type type)
@@ -116,6 +123,7 @@ std::ostream& operator<<(std::ostream& os, const struct request& r)
 		<< ", format:" << r.format << "}";
 }
 
+/*
 int parse_request(char *data, struct request *request)
 {
 	std::string buffer(data);
@@ -178,7 +186,9 @@ int parse_request(char *data, struct request *request)
 
 	return 0;
 }
+*/
 
+/*
 int parse_request_c(char *data, struct request *request)
 {
 	char *next_token;
@@ -237,6 +247,146 @@ int parse_request_c(char *data, struct request *request)
 		}
  	}
 	return result;
+}
+*/
+
+int parse_request_buffer(struct request *request)
+{
+	const char eol[] = "\r\n";
+
+	// Type, path and format are all on the first line.
+	char *end_of_line = strstr(request->buffer, eol);
+	if (!end_of_line) {
+		// Uh... wut? We should have at least one EOL.
+		fprintf(stderr, "Did not find EOL in header. Header:\n%s\n",
+			request->buffer);
+		return EINVAL;
+	}
+	// Put a null in to stop searches for spaces.
+	*end_of_line = 0;
+	// Find the space between GET\POST and the path.
+	char *space = strstr(request->buffer, " ");
+	if (!space) {
+		fprintf(stderr, "Did not find GET\\POST to path space in header. Header: \"%s\"\n",
+			request->buffer);
+		return EINVAL;
+	}
+
+	// Set the space to null and then figure out the request type from the
+	// string.
+	*space = 0;
+	if (strcmp(request->buffer, "GET") == 0) {
+		request->type = GET;
+	} else if (strcmp(request->buffer, "POST") == 0) {
+		request->type = POST;
+	} else {
+		fprintf(stderr, "Unrecognized request type \"%s\"\n",
+			request->buffer);
+		return EINVAL;
+	}
+
+	// Now lets get the path.
+	char *start = space + 1;
+	space = strstr(start, " ");
+	if (!space) {
+		fprintf(stderr, "Failed to find path end: \"%s\"\n", start);
+		return EINVAL;
+	}
+	*space = 0;
+
+	// Handle some special cases for path. If it is just /, change it to
+	// just load index.html. Easiest to do this before copying it into the
+	// request.
+	if (*start == '/') {
+		start++;
+	}
+	strncpy(request->path, start, STRMAX(request->path));
+	// If it is a directory (ends in /) append an index.html.
+	size_t path_len = strlen(request->path);
+	if (request->path[path_len] == '/') {
+		strlcat(request->path, "index.html", STRMAX(request->path));
+	}
+
+	// The rest of the line is the format.
+	request->format = space + 1;
+
+	// Now continue through the buffer looking for new lines. Each new
+	// line delimits a http header (key: value). Then div it up into our
+	// headers array.
+	start = end_of_line + STRMAX(eol);
+	while (start && (request->header_count < LEN(request->headers))) {
+		request->headers[request->header_count].key = start;
+		char *end = strstr(start, eol);
+		if (end) {
+			*end = 0;
+			const char value_delimieter[] = ": ";
+			char *value_start = strstr(start, value_delimieter);
+			if (value_start) {
+				*value_start = 0;
+				request->headers[request->header_count].value =
+					value_start + STRMAX(value_delimieter);
+			} else {
+				fprintf(stderr, "No value for \"%s\"\n",
+					start);
+			}
+			request->header_count++;
+		}
+		start = end;
+		if (start) {
+			start += STRMAX(eol);
+		}
+	}
+
+	printf("Found %lu headers.\n", request->header_count);
+
+	return 0;
+}
+
+int parse_request(char *data, struct request *request)
+{
+	memset(request, 0, sizeof(*request));
+
+	const char *header_separator = "\r\n\r\n";
+
+	// Find the end of the header.
+	char *end_of_header = strstr(data, header_separator);
+
+	// If the header didn't end, copy the whole thing into the request.
+	// Otherwise just copy the header.
+	size_t amount;
+	if (end_of_header) {
+		amount = (size_t)(end_of_header - data);
+	} else {
+		amount = strlen(data);
+	}
+
+	// If the header is bigger than the request can store, refuse to
+	// cooperate.
+	if (amount >= STRMAX(request->buffer)) {
+		fprintf(stderr, "Request header too big: %lu > %lu\n", amount,
+			STRMAX(request->buffer));
+		return ENOBUFS;
+	}
+
+	(void)strncpy(request->buffer, data, amount);
+	memset(request->buffer + amount, 0, LEN(request->buffer) - amount);
+
+	int result = parse_request_buffer(request);
+	if (result) {
+		fprintf(stderr, "Failed to parse request buffer %d.\n",
+			result);
+		return result;
+	}
+
+	// If its a post request set the parameters pointer, which will be
+	// past the end of the header.
+	if (request->type == POST) {
+		request->parameters = end_of_header + strlen(header_separator);
+	} else {
+		request->parameters = NULL;
+	}
+
+	return 0;
 }
 
 int send(int client, const std::string& header, const std::string& contents)
