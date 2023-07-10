@@ -1,5 +1,5 @@
-# config.mk doesn't exist by default. Copy config.def.mk, and mod it to work
-# for your system.
+# config.mk doesn't exist by default. Either copy unix.mk or windows.mk to
+# config.mk or symlink it.
 include config.mk
 
 OUT=server$(OUTEXT)
