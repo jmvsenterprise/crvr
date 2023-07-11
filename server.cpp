@@ -101,26 +101,51 @@ struct request {
 		char *value;
 	} headers[20];
 	char buffer[1024];
+	size_t param_len;
 	char *parameters;
 };
 
-std::ostream& operator<<(std::ostream& os, const enum request_type type)
+void
+print_request(struct request *r)
 {
-	switch (type) {
-	case GET:
-		return os << "GET";
-	case POST:
-		return os << "POST";
-	default:
-		return os << "Unrecognized type " <<
-			static_cast<unsigned>(type);
+	const char *type_str = NULL;
+	size_t i;
+
+	if (r->type == GET) {
+		type_str = "GET";
+	} else if (r->type == POST) {
+		type_str = "POST";
+	} else {
+		type_str = "UNKNOWN";
+	}
+	printf("Request:\n"
+		"Type: %s\n"
+		"Path: %s\n"
+		"Format: %s\n"
+		"Headers:\n",
+		type_str, r->path, r->format);
+	for (i = 0; i < r->header_count; ++i) {
+		printf("\t%s: %s\n", r->headers[i].key, r->headers[i].value);
+	}
+	if (r->parameters) {
+		printf("Parameters:\n"
+		       "-----------"
+		       "%s"
+		       "-----------",
+		       r->parameters);
 	}
 }
 
-std::ostream& operator<<(std::ostream& os, const struct request& r)
+char *
+header_find_value(struct request *r, const char *key)
 {
-	return os << "{type:" << r.type << ", path:" << r.path
-		<< ", format:" << r.format << "}";
+	size_t i;
+	for (i = 0; i < r->header_count; ++i) {
+		if (strcmp(key, r->headers[i].key) == 0) {
+			return r->headers[i].value;
+		}
+	}
+	return NULL;
 }
 
 int parse_request_buffer(struct request *request)
@@ -254,9 +279,25 @@ int parse_request(char *data, struct request *request)
 	// If its a post request set the parameters pointer, which will be
 	// past the end of the header.
 	if (request->type == POST) {
+		char *param_start = end_of_header + strlen(header_separator);
+		request->param_len = strlen(data) - param_start;
+		if (request->param_cap <= request->param_len) {
+			free(request->parameters);
+			request->parameters = calloc(
+				sizeof(*request->parameters) *
+				request->param_len + 1);
+			if (!request->parameters) {
+				fprintf(stderr,
+					"Failed to allocate new_params\n");
+				return ENOBUFS;
+			}
+			request
+			strncpy(new_params, param_start, request->param_len);
+
+
 		request->parameters = end_of_header + strlen(header_separator);
 	} else {
-		request->parameters = NULL;
+		request->param_len = 0;
 	}
 
 	return 0;
@@ -358,13 +399,50 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 	return result;
 }
 
-int handle_post_request(int client, struct request *request, struct pool *p)
+int handle_post_request(int client, struct request *r, struct pool *p,
+	size_t bytes_received)
 {
 	(void)client;
 	(void)p;
-	printf("parameters length: %lu. parameters:\n=====\n%s\n=====\n",
-		strlen(request->parameters), request->parameters);
-	return EINVAL;
+
+	// Convert the content-length in the header to bytes.
+	char *value = header_find_value(r, "Content-Length");
+	if (!value) {
+		fprintf(stderr, "Did not find Content-Length in header\n");
+		print_request(r);
+		return EINVAL;
+	}
+	long total_len = strtol(value, NULL, 10);
+	if ((errno != 0) || (total_len < 0)) {
+		fprintf(stderr, "Failed to convert %s to long. %u.\n", value,
+			errno);
+		return EINVAL;
+	}
+	size_t bytes_needed = (size_t)total_len - bytes_received;
+	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
+		bytes_received, bytes_needed);
+	
+	if (r->params_len + bytes_needed < r->params_cap) {
+		// Resize the buffer to hold all of the parameters.
+		size = r->params_len + bytes_needed + 1;
+		new_buf = calloc(sizeof(*new_buf) * size);
+		if (!new_buf) {
+			fprintf(stderr, "Failed to allocate new buf.\n");
+			return ENOBUFS;
+		}
+		strncpy(new_buf, r->parameters, size);
+		free(r->parameters);
+		r->parameters = new_buf;
+		r->params_cap = size;
+	}
+	bytes_read = read(client, r->parameters + r->params_len, bytes_needed);
+	if (bytes_read != bytes_needed) {
+		fprintf(stderr, "Only read %lu of %lu bytes.\n", bytes_read,
+			bytes_needed);
+		return EAGAIN;
+	}
+		
+	return 0;
 }
 
 int handle_client(int client, struct sockaddr_in *client_addr, pool& p)
@@ -389,7 +467,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, pool& p)
 	if (request.type == GET) {
 		result = handle_get_request(client, &request, &p);
 	} else {
-		result = handle_post_request(client, &request, &p);
+		result = handle_post_request(client, &request, &p, bytes_rxed);
 	}
 	if (result != 0) {
 		std::cerr << "Failed to handle client: " << result <<
