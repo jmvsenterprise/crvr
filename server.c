@@ -5,13 +5,8 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include <string>
-#include <filesystem>
-#include <iostream>
 
-extern "C" {
 #include "pool.h"
-}
 
 #if WINDOWS
 #include <winsock2.h>
@@ -64,6 +59,7 @@ int get_error(void)
 #error "No build type selected"
 #endif
 
+#define MEGABYTE (1000000)
 #define GIGABYTE (1000000000)
 
 #define LEN(p) (sizeof(p) / sizeof(p[0]))
@@ -102,6 +98,7 @@ struct request {
 	} headers[20];
 	char buffer[1024];
 	size_t param_len;
+	size_t param_cap;
 	char *parameters;
 };
 
@@ -280,22 +277,19 @@ int parse_request(char *data, struct request *request)
 	// past the end of the header.
 	if (request->type == POST) {
 		char *param_start = end_of_header + strlen(header_separator);
-		request->param_len = strlen(data) - param_start;
+		request->param_len = (size_t)((data + strlen(data)) -
+			param_start);
 		if (request->param_cap <= request->param_len) {
 			free(request->parameters);
-			request->parameters = calloc(
-				sizeof(*request->parameters) *
-				request->param_len + 1);
+			request->parameters = calloc(request->param_len + 1,
+				sizeof(*request->parameters));
 			if (!request->parameters) {
 				fprintf(stderr,
 					"Failed to allocate new_params\n");
 				return ENOBUFS;
 			}
-			request
-			strncpy(new_params, param_start, request->param_len);
-
-
-		request->parameters = end_of_header + strlen(header_separator);
+		}
+		strncpy(request->parameters, param_start, request->param_len);
 	} else {
 		request->param_len = 0;
 	}
@@ -303,25 +297,32 @@ int parse_request(char *data, struct request *request)
 	return 0;
 }
 
-int send(int client, const std::string& header, const std::string& contents)
+int send(int client, const char *header, const char *contents,
+	size_t content_len)
 {
-	static std::string buffer;
-	buffer.clear();
-	buffer += header;
-	buffer += "Content Length: ";
-	buffer += std::to_string(contents.length());
-	buffer += "\r\n\r\n";
-	buffer += contents;
+	static char buffer[MEGABYTE];
+	int bytes;
 
-	ssize_t bytes_sent = write(client, buffer.c_str(), buffer.length());
+	memset(buffer, 0, LEN(buffer));
+
+	bytes = snprintf(buffer, STRMAX(buffer),
+		"%s\r\nContent Length: %lu\r\n\r\n%s", header, content_len,
+		contents);
+	if (bytes < 0) {
+		fprintf(stderr, "Buf write failure. %d.\n", errno);
+		return errno;
+	}
+
+	ssize_t bytes_sent = write(client, buffer, (size_t)bytes);
 	if (bytes_sent == -1) {
-		std::cerr << "Failed to write buffer to client! " << errno <<
-			"\n";
+		fprintf(stderr, "Failed to write buffer to client! %d\n",
+			errno);
 		return -1;
 	}
-	if (static_cast<size_t>(bytes_sent) != buffer.length()) {
-		std::cerr << "Failed to send buffer to client!\nOnly wrote " <<
-			bytes_sent << " of " << buffer.length() << " bytes.\n";
+	if (bytes_sent != bytes) {
+		fprintf(stderr,
+			"Failed to send buffer to client!\nOnly wrote %ld of %d bytes\n",
+			bytes_sent, bytes);
 		return -1;
 	}
 	return 0;
@@ -329,7 +330,7 @@ int send(int client, const std::string& header, const std::string& contents)
 
 int send_404(int client)
 {
-	static const std::string html(
+	static const char html[] = 
 		"<html>"
 		"  <head>"
 		"    <title>Page Not Found</title>"
@@ -337,24 +338,25 @@ int send_404(int client)
 		"  <body>"
 		"    <h1>Sorry that page doesn't exist</h1>"
 		"  </body>"
-		"</html>"
-	);
-	static const std::string header(
-		"HTTP/1.1 404 NOT FOUND"
-	);
+		"</html>";
+	static const char header[] = "HTTP/1.1 404 NOT FOUND";
 
-	return send(client, header, html);
+	return send(client, header, html, STRMAX(html));
 }
 
 int send_file(FILE *f, int client, struct pool *p)
 {
+	char *contents;
+	long file_size;
+	size_t chars_read;
+
 	(void)p;
 
 	if (fseek(f, 0, SEEK_END) != 0) {
 		perror("Failed to seek to the end of the file.\n");
 		return -1;
 	}
-	long file_size = ftell(f);
+	file_size = ftell(f);
 	if (file_size == -1) {
 		perror("Failed to read the file size of the file.\n");
 		return -1;
@@ -363,22 +365,23 @@ int send_file(FILE *f, int client, struct pool *p)
 		perror("Failed to seek to beginning of the file.\n");
 		return -1;
 	}
+	contents = calloc(file_size, sizeof(*contents));
+	if (!contents) {
+		fprintf(stderr, "Failed to allocate buffer for file: %d.\n",
+			errno);
+		return errno;
+	}
 
-	std::string contents(static_cast<size_t>(file_size),
-		'\0');
-
-	size_t chars_read = fread(
-		reinterpret_cast<void*>(contents.data()),
-		sizeof(decltype(contents)::value_type),
-		contents.length(), f);
-	if (chars_read != contents.length()) {
+	chars_read = fread((void*)contents, sizeof(*contents),
+		(size_t)file_size, f);
+	if (chars_read != (size_t)file_size) {
 		printf("Failed to read in the entire file: %lu of %ld\n",
-			chars_read, contents.length());
+			chars_read, file_size);
 		return -1;
 	}
 
-	static const std::string header("HTTP/1.1 200 OK");
-	return send(client, header, contents);
+	static const char header[] = "HTTP/1.1 200 OK";
+	return send(client, header, contents, content_len);
 }
 
 /*
@@ -387,11 +390,11 @@ int send_file(FILE *f, int client, struct pool *p)
  */
 int handle_get_request(int client, struct request *request, struct pool *p)
 {
-	std::cout << "Getting " << request->path << "\n";
-	FILE *f = nullptr;
+	printf("Getting %s\n", request->path);
+	FILE *f = NULL;
 	f = fopen(request->path, "r");
 	if (!f) {
-		std::cerr << "File " << request->path << " not found.\n";
+		fprintf(stderr, "%s not found.\n", request->path);
 		return send_404(client);
 	}
 	int result = send_file(f, client, p);
@@ -402,30 +405,37 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 int handle_post_request(int client, struct request *r, struct pool *p,
 	size_t bytes_received)
 {
+	ssize_t bytes_read;
+	char *value;
+	long total_len;
+	size_t bytes_needed;
+	size_t size;
+	char *new_buf;
+
 	(void)client;
 	(void)p;
 
 	// Convert the content-length in the header to bytes.
-	char *value = header_find_value(r, "Content-Length");
+	value = header_find_value(r, "Content-Length");
 	if (!value) {
 		fprintf(stderr, "Did not find Content-Length in header\n");
 		print_request(r);
 		return EINVAL;
 	}
-	long total_len = strtol(value, NULL, 10);
+	total_len = strtol(value, NULL, 10);
 	if ((errno != 0) || (total_len < 0)) {
 		fprintf(stderr, "Failed to convert %s to long. %u.\n", value,
 			errno);
 		return EINVAL;
 	}
-	size_t bytes_needed = (size_t)total_len - bytes_received;
+	bytes_needed = (size_t)total_len - bytes_received;
 	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
 		bytes_received, bytes_needed);
 	
-	if (r->params_len + bytes_needed < r->params_cap) {
+	if (r->param_len + bytes_needed < r->param_cap) {
 		// Resize the buffer to hold all of the parameters.
-		size = r->params_len + bytes_needed + 1;
-		new_buf = calloc(sizeof(*new_buf) * size);
+		size = r->param_len + bytes_needed + 1;
+		new_buf = calloc(size, sizeof(*new_buf));
 		if (!new_buf) {
 			fprintf(stderr, "Failed to allocate new buf.\n");
 			return ENOBUFS;
@@ -433,10 +443,14 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		strncpy(new_buf, r->parameters, size);
 		free(r->parameters);
 		r->parameters = new_buf;
-		r->params_cap = size;
+		r->param_cap = size;
 	}
-	bytes_read = read(client, r->parameters + r->params_len, bytes_needed);
-	if (bytes_read != bytes_needed) {
+	bytes_read = read(client, r->parameters + r->param_len, bytes_needed);
+	if (bytes_read < 0) {
+		fprintf(stderr, "Failed to read from client: %d.\n", errno);
+		return errno;
+	}
+	if ((size_t)bytes_read != bytes_needed) {
 		fprintf(stderr, "Only read %lu of %lu bytes.\n", bytes_read,
 			bytes_needed);
 		return EAGAIN;
@@ -445,7 +459,7 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	return 0;
 }
 
-int handle_client(int client, struct sockaddr_in *client_addr, pool& p)
+int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 {
 	(void)client_addr;
 
@@ -453,25 +467,27 @@ int handle_client(int client, struct sockaddr_in *client_addr, pool& p)
 	memset(buffer, 0, sizeof(buffer));
 	size_t bytes_rxed = (size_t)recv(client, buffer, LEN(buffer) - 1, 0);
 	if (bytes_rxed == (size_t)-1) {
-		printf("Failed to read from client: %d.\n", get_error());
+		fprintf(stderr, "Failed to read from client: %d.\n",
+			get_error());
 		return -1;
 	}
 
 	struct request request;
 	if (parse_request(buffer, &request) != 0) {
-		std::cerr << "Failed to parse the client's request.\n" <<
-			"Buffer was:\n" << buffer << "\n";
+		fprintf(stderr,
+			"Failed to parse client's request.\nBuffer was:\n%s\n",
+			buffer);
 		return -1;
 	}
 	int result;
 	if (request.type == GET) {
-		result = handle_get_request(client, &request, &p);
+		result = handle_get_request(client, &request, p);
 	} else {
-		result = handle_post_request(client, &request, &p, bytes_rxed);
+		result = handle_post_request(client, &request, p, bytes_rxed);
 	}
 	if (result != 0) {
-		std::cerr << "Failed to handle client: " << result <<
-			"\nBuffer was:\n" << buffer << "\n";
+		fprintf(stderr, "Failed to handle client %d\nBuffer was:\n%s\n",
+			result, buffer);
 	}
 	return result;
 }
@@ -497,7 +513,7 @@ int serve(int server_sock)
 		if (client != -1) {
 			assert(sizeof(client_addr) == addr_len);
 			print(&client_addr);
-			result = handle_client(client, &client_addr, p);
+			result = handle_client(client, &client_addr, &p);
 			close(client);
 
 			if (result != 0) {
