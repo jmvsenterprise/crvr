@@ -297,7 +297,7 @@ int parse_request(char *data, struct request *request)
 	return 0;
 }
 
-int send(int client, const char *header, const char *contents,
+int send_data(int client, const char *header, const char *contents,
 	size_t content_len)
 {
 	static char buffer[MEGABYTE];
@@ -341,7 +341,7 @@ int send_404(int client)
 		"</html>";
 	static const char header[] = "HTTP/1.1 404 NOT FOUND";
 
-	return send(client, header, html, STRMAX(html));
+	return send_data(client, header, html, STRMAX(html));
 }
 
 int send_file(FILE *f, int client, struct pool *p)
@@ -349,6 +349,8 @@ int send_file(FILE *f, int client, struct pool *p)
 	char *contents;
 	long file_size;
 	size_t chars_read;
+	static const char header[] = "HTTP/1.1 200 OK";
+	int result;
 
 	(void)p;
 
@@ -357,7 +359,7 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 	file_size = ftell(f);
-	if (file_size == -1) {
+	if (file_size < 0) {
 		perror("Failed to read the file size of the file.\n");
 		return -1;
 	}
@@ -365,7 +367,7 @@ int send_file(FILE *f, int client, struct pool *p)
 		perror("Failed to seek to beginning of the file.\n");
 		return -1;
 	}
-	contents = calloc(file_size, sizeof(*contents));
+	contents = calloc((size_t)file_size, sizeof(*contents));
 	if (!contents) {
 		fprintf(stderr, "Failed to allocate buffer for file: %d.\n",
 			errno);
@@ -380,8 +382,12 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 
-	static const char header[] = "HTTP/1.1 200 OK";
-	return send(client, header, contents, content_len);
+	result = send_data(client, header, contents, (size_t)file_size);
+	if (result < 0) {
+		fprintf(stderr, "Failed to send message.\n");
+		return errno;
+	}
+	return 0;
 }
 
 /*
@@ -423,9 +429,13 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		return EINVAL;
 	}
 	total_len = strtol(value, NULL, 10);
-	if ((errno != 0) || (total_len < 0)) {
+	if ((total_len == 0) && ((errno == EINVAL) || (errno == ERANGE))) {
 		fprintf(stderr, "Failed to convert %s to long. %u.\n", value,
 			errno);
+		return ERANGE;
+	}
+	if (total_len < 0) {
+		fprintf(stderr, "Invalid content length %lu.\n", total_len);
 		return EINVAL;
 	}
 	bytes_needed = (size_t)total_len - bytes_received;
