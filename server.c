@@ -411,7 +411,6 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 int handle_post_request(int client, struct request *r, struct pool *p,
 	size_t bytes_received)
 {
-	ssize_t bytes_read;
 	char *value;
 	long total_len;
 	size_t bytes_needed;
@@ -455,17 +454,18 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		r->parameters = new_buf;
 		r->param_cap = size;
 	}
-	bytes_read = read(client, r->parameters + r->param_len, bytes_needed);
-	if (bytes_read < 0) {
-		fprintf(stderr, "Failed to read from client: %d.\n", errno);
-		return errno;
+	while (r->param_len < bytes_needed) {
+		size_t space = bytes_needed - r->param_len;
+		ssize_t in = read(client, r->parameters + r->param_len, space);
+		if (in < 0) {
+			fprintf(stderr, "Failed to read from client: %d.\n",
+				errno);
+			return errno;
+		}
+		r->param_len += (size_t)in;
+		printf("Read %ld (%lu/%lu)\n", in, r->param_len, bytes_needed);
 	}
-	if ((size_t)bytes_read != bytes_needed) {
-		fprintf(stderr, "Only read %lu of %lu bytes.\n", bytes_read,
-			bytes_needed);
-		return EAGAIN;
-	}
-		
+	printf("Parameters read in. Total %lu\n", r->param_len);
 	return 0;
 }
 
