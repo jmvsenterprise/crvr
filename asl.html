@@ -1,0 +1,31 @@
+<html>
+  <head><title>ASL Quizzer</title></head>
+  <script type="text/javascript">
+    function reveal() {
+      var back_div = document.getElementById("back_div");
+      back_div.style.display = "block";
+      document.getElementById("reveal_btn").style.display = "none";
+    }
+  </script>
+  <body>
+    <h1>ASL Quizzer</h1>
+    <p>Remaining Cards: $cards</p>
+    <div id="front_div">
+      <p>
+        <img src="$front" width="400" height="400">
+      <p>
+      <p>
+        <input type="button" id="reveal_btn" name="reveal" onclick="reveal" value="Reveal">
+      <p>
+    </div>
+    <div id="back_div" style="display:none;">
+      <p>Back: $back</p>
+      <p>How confident were you?</p>
+      <form method="post" action="/asl.html">
+        <input type="submit" name="poor_button" id="poor_button" value="poor">
+        <input type="submit" name="good_button" id="good_button" value="good">
+        <input type="submit" name="great_button" id="great_button" value="great">
+      </form>
+    </div>
+  </body>
+</html>

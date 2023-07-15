@@ -447,6 +447,99 @@ int send_file(FILE *f, int client, struct pool *p)
 	return 0;
 }
 
+int load_file(const char *file_name, char *buffer, const size_t buf_len, size_t *bytes_loaded)
+{
+	assert(bytes_loaded && file_name && buffer && buf_len > 0);
+
+	int result = 0;
+	size_t bytes_read;
+	FILE *f;
+
+	FILE *f = fopen(file_name, "r");
+	if (!f) {
+		fprintf(stderr, "Failed to open %s: %d\n", file_name, errno);
+		return errno;
+	}
+	*bytes_loaded = 0;
+	while (!feof(f) && !ferror(f)) {
+		bytes_read = fread(buffer + *bytes_loaded, sizeof(*buffer), buf_len - *bytes_loaded, f);
+		*bytes_loaded += bytes_read;
+	}
+	if (ferror(f)) {
+		result = errno;
+		fprintf(stderr, "Error reading %s: %d.\n", file_name, result);
+	}
+	fclose(f);
+	return result;
+}
+
+enum var_type {
+	VT_SIZE_T,
+	VT_STR,
+};
+
+struct variable {
+	char name[256];
+	enum var_type type;
+	union value {
+		size_t st;
+		char value[256];
+	} vlaue;
+};
+
+/*
+ * Replace the variables found in buf with their values.
+ */
+int replace_in_buf(char *buf, const size_t buf_len, const size_t buf_cap, struct variable *vars, size_t var_len)
+{
+	size_t dst = 0;
+	size_t var_c = 0;
+	size_t cmp = 0;
+	size_t var_index = 0;
+	char scratch[KILOBYTE];
+	struct variable *var;
+	int result = 0;
+
+	for (; dst < buf_len; ++dst) {
+		struct variable *var = is_variable(buf + dst, vars, var_len);
+		if (var) {
+			result = print_var_to(var, scratch, STRMAX(scratch));
+			if (result != 0) {
+				fprintf(stderr, "Failed to print var %s.\n", var->name);
+				return result;
+			/*
+			 * Make room in the buffer for the printed variable.
+			 */
+			size_t var_len = strlen(scratch);
+			size_t buf_space = buf_cap - buf_len;
+			if (var_len > buf_space) {
+				fprintf(stderr, "Need %u more bytes in buffer.\n", var_len - buf_space);
+				return ENOBUFS;
+			}
+			#error Need to know where the end of the variable text is from the $
+		}
+	}
+}
+
+/*
+ * Read the file into the buffer, but swap out the variables with the current
+ * values.
+ */
+int asl_get(struct request *r, int client)
+{
+	static file_buf[MEGABYTE];
+	size_t file_len;
+	if (!load_file("asl.html", file_buf, LEN(file_buf), &file_len) {
+		fprintf(stderr, "Failed to open file %s.\n", asl_file);
+		return send_404(client);
+	}
+	if (!replace_in_buf(file_buf, file_len, asl_variables)) {
+		fprintf(stderr, "Failed to replace variables in file.\n");
+		return send_404(client);
+	}
+	return send_buf(file_buf, file_len, client);
+}
+
 /*
  * Load the file the client requested and return it, otherwise return an error
  * page to the client.
@@ -454,6 +547,9 @@ int send_file(FILE *f, int client, struct pool *p)
 int handle_get_request(int client, struct request *request, struct pool *p)
 {
 	printf("Getting \"%s\"\n", request->path);
+	if (strcmp(request->path, "/asl.html") == 0) {
+		return asl_get(request, client);
+	}
 	FILE *f = NULL;
 	f = fopen(request->path, "r");
 	if (!f) {
@@ -463,6 +559,14 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 	int result = send_file(f, client, p);
 	fclose(f);
 	return result;
+}
+
+int asl_post(struct request *r, int client)
+{
+	// Nothing for the moment.
+	(void)r;
+	(void)client;
+	return 0;
 }
 
 int handle_post_request(int client, struct request *r, struct pool *p,
@@ -525,6 +629,11 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	printf("Parameters read in. Total %lu\n", r->param_len);
 
 	print_request(r);
+
+	if (strcmp(r->path, "asl.html") == 0) {
+		return asl_post(r, client);
+	}
+	printf("Don't know what to do with post to %s.\n", r->path);
 	return 0;
 }
 
@@ -672,8 +781,6 @@ int find_image_files(void)
 			size_t last_dir_char = entry->d_namlen - 1;
 			while ((last_ft_char > 0) && (last_dir_char > 0)) {
 				if (file_types[type][last_ft_char] != entry->d_name[last_dir_char]) {
-					printf("%c (%lu) did not match %c (%lu).\n", file_types[type][last_ft_char],
-						last_ft_char, entry->d_name[last_dir_char], last_dir_char);
 					printf("%s did not match %s.\n", entry->d_name, file_types[type]);
 					match = 0;
 					break;
