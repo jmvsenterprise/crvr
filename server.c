@@ -640,6 +640,8 @@ int found_image(char *image)
 	quiz_len++;
 	card_count++;
 
+	printf("Loaded image %s.\n", image);
+
 	return 0;
 }
 
@@ -667,23 +669,32 @@ int find_image_files(void)
 		for (size_t type = 0; type < LEN(file_types); ++type) {
 			int match = 1;
 			size_t last_ft_char = strlen(file_types[type]) - 1;
-			size_t last_dir_char = entry->d_namlen;
+			size_t last_dir_char = entry->d_namlen - 1;
 			while ((last_ft_char > 0) && (last_dir_char > 0)) {
 				if (file_types[type][last_ft_char] != entry->d_name[last_dir_char]) {
+					printf("%c (%lu) did not match %c (%lu).\n", file_types[type][last_ft_char],
+						last_ft_char, entry->d_name[last_dir_char], last_dir_char);
 					printf("%s did not match %s.\n", entry->d_name, file_types[type]);
 					match = 0;
 					break;
 				}
+				last_ft_char--;
+				last_dir_char--;
 			}
 			if (match) {
 				result = found_image(entry->d_name) != 0;
 				if (result != 0) {
 					fprintf(stderr, "Failed to add image.\n");
 				}
+				/* Don't look for any other file type matches. */
+				break;
 			}
 		}
 	}
 	(void)closedir(cwd);
+
+	printf("Loaded %lu/%lu cards, %lu/%lu quiz items.\n", card_count, LEN(cards),
+		quiz_len, LEN(quiz));
 	return result;
 }
 

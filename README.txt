@@ -17,21 +17,22 @@ TODO
 ----
 Simplest viable product:
 
-The server scans its starting directory for all image files. It then creates
-an association of the card with the front or back of the card. The front of
-the card will be the image in the file, and the back of the card will be the
-file name of the image.
+[x] The server scans its starting directory for all image files.
+[x] It then creates an association of the card with the front or back of the card.
+    The front of the card will be the image in the file, and the back of the card will be the
+    file name of the image.
 
-The server then compiles a list of all the cards and whether it should show
-the front or back of the card and saves it as a quiz.
+[x] The server then compiles a list of all the cards and whether it should show
+    the front or back of the card and saves it as a quiz.
 
-Then, the server runs the quiz, which consists of showing each card once for
-both faces and quizzing the user to recall the other side of the card. They
-click the reveal button to show the other side of the card and then three
-buttons appear asking them to rate their recall level as either "Poor", 
-"Good", or "Great". Their recall level, the image name, what face was shown
-originally are stored to a results file so I can later process that into
-a database or something.
+[ ] Then, the server runs the quiz, which consists of showing each card once for
+    both faces and quizzing the user to recall the other side of the card.
+[ ] They click the reveal button to show the other side of the card and then three
+    buttons appear asking them to rate their recall level as either "Poor", 
+    "Good", or "Great".
+[ ] Their recall level, the image name, what face was shown originally are
+    stored to a results file so I can later process that into a database or
+    something.
 
 
 FUTURE ENHANCEMENTS IN PRIORITY ORDER
