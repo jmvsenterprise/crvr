@@ -13,6 +13,24 @@ For now this serves very specific files, but once I've got it working for my
 use case I have a few ideas for possible expansion which I may, or may not,
 persue. Details follow.
 
+TODO
+----
+Simplest viable product:
+
+The server scans its directory for image files and creates a randomized list
+of them.
+Get a page that renders one face of a card, the "active" face. The card is
+two sided and either side can be a photo or text. Either side of the card can
+have a note which should be displayed when that side of the card is active.
+
+The user can then click a button to reveal the inactive face of the card. And
+when they do the reveal button goes away and is replaced by three buttons that
+describes their confidence level on their recall of the inactive face of the
+card.
+
+When the user clicks on one of these three buttons, their confidence level is
+logged for that card as a rating.
+
 
 THE PLAN
 --------

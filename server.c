@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
@@ -102,6 +103,47 @@ struct request {
 	char *parameters;
 };
 
+void print_blob(const char *blob, const size_t len)
+{
+	size_t count = 0;
+	unsigned line_offset = 0;
+	char line[16];
+	for (size_t i = 0; i < len; ++i) {
+		line[count++] = blob[i];
+		if (count == LEN(line)) {
+			printf("0x%08x: ", line_offset);
+			for (size_t c = 0; c < LEN(line); ++c) {
+				printf("%02.2hhx ", line[c]);
+			}
+			for (size_t c = 0; c < LEN(line); ++c) {
+				if (isalnum(line[c]) || ispunct(line[c])) {
+					printf("%c", line[c]);
+				} else {
+					printf(".");
+				}
+			}
+			printf("\n");
+			line_offset += LEN(line);
+			count = 0;
+
+		}
+	}
+	if (count > 0) {
+		printf("0x%08x: ", line_offset);
+		for (size_t c = 0; c < count; ++c) {
+			printf("%02.2hhx ", line[c]);
+		}
+		for (size_t c = 0; c < count; ++c) {
+			if (isalnum(line[c]) || ispunct(line[c])) {
+				printf("%c", line[c]);
+			} else {
+				printf(".");
+			}
+		}
+	}
+	printf("\n");
+}
+
 void
 print_request(struct request *r)
 {
@@ -126,10 +168,9 @@ print_request(struct request *r)
 	}
 	if (r->parameters) {
 		printf("Parameters:\n"
-		       "-----------"
-		       "%s"
-		       "-----------",
-		       r->parameters);
+		       "-----------\n");
+		print_blob(r->parameters, r->param_len);	
+		printf("-----------\n");
 	}
 }
 
@@ -466,6 +507,8 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		printf("Read %ld (%lu/%lu)\n", in, r->param_len, bytes_needed);
 	}
 	printf("Parameters read in. Total %lu\n", r->param_len);
+
+	print_request(r);
 	return 0;
 }
 
