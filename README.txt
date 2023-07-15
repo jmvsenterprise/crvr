@@ -17,20 +17,28 @@ TODO
 ----
 Simplest viable product:
 
-The server scans its directory for image files and creates a randomized list
-of them.
-Get a page that renders one face of a card, the "active" face. The card is
-two sided and either side can be a photo or text. Either side of the card can
-have a note which should be displayed when that side of the card is active.
+The server scans its starting directory for all image files. It then creates
+an association of the card with the front or back of the card. The front of
+the card will be the image in the file, and the back of the card will be the
+file name of the image.
 
-The user can then click a button to reveal the inactive face of the card. And
-when they do the reveal button goes away and is replaced by three buttons that
-describes their confidence level on their recall of the inactive face of the
-card.
+The server then compiles a list of all the cards and whether it should show
+the front or back of the card and saves it as a quiz.
 
-When the user clicks on one of these three buttons, their confidence level is
-logged for that card as a rating.
+Then, the server runs the quiz, which consists of showing each card once for
+both faces and quizzing the user to recall the other side of the card. They
+click the reveal button to show the other side of the card and then three
+buttons appear asking them to rate their recall level as either "Poor", 
+"Good", or "Great". Their recall level, the image name, what face was shown
+originally are stored to a results file so I can later process that into
+a database or something.
 
+
+FUTURE ENHANCEMENTS IN PRIORITY ORDER
+-------------------
+Uploading images to the server via an upload page
+Creating quizes
+HTTPS
 
 THE PLAN
 --------

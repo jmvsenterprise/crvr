@@ -1,5 +1,6 @@
 #include <assert.h>
 #include <ctype.h>
+#include <dirent.h>
 #include <errno.h>
 #include <limits.h>
 #include <stdint.h>
@@ -84,13 +85,9 @@ enum request_type {
 	POST
 };
 
-/*
- * NOTE: I could have the request store the entire header and split up the parts
- * by inserting \0s into it.
- */
 struct request {
 	enum request_type type;
-	char path[256];
+	char path[FILENAME_MAX];
 	char *format;
 	size_t header_count;
 	struct header {
@@ -103,14 +100,26 @@ struct request {
 	char *parameters;
 };
 
-void print_blob(const char *blob, const size_t len)
+/*
+ * Print blob which is len bytes long. If max_lines is -1, print the entire blob.
+ * If max_lines is > 0, print at most that many lines of blob. A "line" contains
+ * BLOB_LINE bytes of hex data and character data.
+ */
+#define BLOB_LINE (16)
+void print_blob(const char *blob, const size_t len, int max_lines)
 {
 	size_t count = 0;
 	unsigned line_offset = 0;
-	char line[16];
+	char line[BLOB_LINE];
 	for (size_t i = 0; i < len; ++i) {
 		line[count++] = blob[i];
 		if (count == LEN(line)) {
+			if (max_lines != -1) {
+				if (max_lines == 0)
+					return;
+				else
+					max_lines--;
+			}
 			printf("0x%08x: ", line_offset);
 			for (size_t c = 0; c < LEN(line); ++c) {
 				printf("%02.2hhx ", line[c]);
@@ -169,7 +178,7 @@ print_request(struct request *r)
 	if (r->parameters) {
 		printf("Parameters:\n"
 		       "-----------\n");
-		print_blob(r->parameters, r->param_len);	
+		print_blob(r->parameters, r->param_len, 20);	
 		printf("-----------\n");
 	}
 }
@@ -236,7 +245,14 @@ int parse_request_buffer(struct request *request)
 	if (*start == '/') {
 		start++;
 	}
-	strncpy(request->path, start, STRMAX(request->path));
+	/*
+	 * If start is empty, default to index.html.
+	 */
+	if (strlen(start) == 0) {
+		strncpy(request->path, "index.html", STRMAX(request->path));
+	} else {
+		strncpy(request->path, start, STRMAX(request->path));
+	}
 	// If it is a directory (ends in /) append an index.html.
 	size_t path_len = strlen(request->path);
 	if (request->path[path_len] == '/') {
@@ -437,7 +453,7 @@ int send_file(FILE *f, int client, struct pool *p)
  */
 int handle_get_request(int client, struct request *request, struct pool *p)
 {
-	printf("Getting %s\n", request->path);
+	printf("Getting \"%s\"\n", request->path);
 	FILE *f = NULL;
 	f = fopen(request->path, "r");
 	if (!f) {
@@ -582,18 +598,111 @@ int serve(int server_sock)
 	return result;
 }
 
+struct card {
+	char image[FILENAME_MAX];
+};
+
+struct quiz_item {
+	size_t card_id;
+	int front;
+	int confidence;
+};
+
+static size_t card_count = 0;
+static struct card cards[100];
+static size_t quiz_len = 0;
+static struct quiz_item quiz[LEN(cards) * 2];
+#define NOT_TESTED -1
+
+/*
+ * Create a new card entry, then create two quiz items in the quiz for the card.
+ * One for the front of the card and one for the back of the card.
+ */
+int found_image(char *image)
+{
+	if (card_count >= LEN(cards)) {
+		fprintf(stderr, "Out of cards: %lu/%lu\n", card_count, LEN(cards));
+		return ENOBUFS;
+	}
+	// +1 because we need two spaces.
+	if (quiz_len + 1 >= LEN(quiz)) {
+		fprintf(stderr, "Out of quiz space: %lu/%lu\n", quiz_len, LEN(quiz));
+		return ENOBUFS;
+	}
+	strncpy(cards[card_count].image, image, STRMAX(cards[card_count].image));
+	quiz[quiz_len].card_id = card_count;
+	quiz[quiz_len].front = 0;
+	quiz[quiz_len].confidence = NOT_TESTED;
+	quiz_len++;
+	quiz[quiz_len].card_id = card_count;
+	quiz[quiz_len].front = 1;
+	quiz[quiz_len].confidence = NOT_TESTED;
+	quiz_len++;
+	card_count++;
+
+	return 0;
+}
+
+int find_image_files(void)
+{
+	DIR *cwd;
+	struct dirent *entry;
+	char *file_types[] = {
+		".png",
+		".jpg",
+		".jpeg",
+	};
+	int result = 0;
+
+	cwd = opendir(".");
+	if (!cwd) {
+		perror("Failed to open current directory.");
+		return errno;
+	}
+	while ((entry = readdir(cwd))) {
+		if (entry->d_type != DT_REG) {
+			printf("%s is not a regular file. Skipping.\n", entry->d_name);
+			continue;
+		}
+		for (size_t type = 0; type < LEN(file_types); ++type) {
+			int match = 1;
+			size_t last_ft_char = strlen(file_types[type]) - 1;
+			size_t last_dir_char = entry->d_namlen;
+			while ((last_ft_char > 0) && (last_dir_char > 0)) {
+				if (file_types[type][last_ft_char] != entry->d_name[last_dir_char]) {
+					printf("%s did not match %s.\n", entry->d_name, file_types[type]);
+					match = 0;
+					break;
+				}
+			}
+			if (match) {
+				result = found_image(entry->d_name) != 0;
+				if (result != 0) {
+					fprintf(stderr, "Failed to add image.\n");
+				}
+			}
+		}
+	}
+	(void)closedir(cwd);
+	return result;
+}
+
 int main()
 {
 	int result = 0;
+	if (find_image_files() != 0) {
+		fprintf(stderr, "Failed to find image files.\n");
+		return -1;
+	}
 	if (init_socket_layer() != 0) {
 		printf("Failed to initialize the socket layer\n");
 	}
 	int server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
 	if (server_sock != -1) {
-
 		struct sockaddr_in address;
 		address.sin_family = AF_INET;
-		address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		//address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+		address.sin_addr.s_addr = htonl(INADDR_ANY);
 		address.sin_port = htons(port);
 		printf("Server will listen on port %hu.\n", port);
 

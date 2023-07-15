@@ -3,11 +3,12 @@
 include config.mk
 
 OUT=server$(OUTEXT)
+OBJS=server.$(OBJ) pool.$(OBJ)
 
 all: server
 
-$(OUT): server.$(OBJ) pool.$(OBJ)
-	$(CXX) $^ -o $@ $(LDFLAGS) $(LDLIBS)
+$(OUT): $(OBJS)
+	$(CC) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 clean:
 	$(RM) $(OUT)
