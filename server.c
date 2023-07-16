@@ -61,6 +61,7 @@ int get_error(void)
 #error "No build type selected"
 #endif
 
+#define KILOBYTE (1000)
 #define MEGABYTE (1000000)
 #define GIGABYTE (1000000000)
 
@@ -455,14 +456,15 @@ int load_file(const char *file_name, char *buffer, const size_t buf_len, size_t 
 	size_t bytes_read;
 	FILE *f;
 
-	FILE *f = fopen(file_name, "r");
+	f = fopen(file_name, "r");
 	if (!f) {
 		fprintf(stderr, "Failed to open %s: %d\n", file_name, errno);
 		return errno;
 	}
 	*bytes_loaded = 0;
 	while (!feof(f) && !ferror(f)) {
-		bytes_read = fread(buffer + *bytes_loaded, sizeof(*buffer), buf_len - *bytes_loaded, f);
+		bytes_read = fread(buffer + *bytes_loaded, sizeof(*buffer),
+			buf_len - *bytes_loaded, f);
 		*bytes_loaded += bytes_read;
 	}
 	if (ferror(f)) {
@@ -487,10 +489,22 @@ struct variable {
 	} vlaue;
 };
 
+struct variable *look_for_variable(const char *buf, struct variable *vars,
+	const size_t var_len)
+{
+	for (size_t i = 0; i < var_len; ++i) {
+		if (strncmp(buf, vars[i].name, strlen(vars[i].name)) == 0) {
+			return vars + i;
+		}
+	}
+	return NULL;
+}
+
 /*
  * Replace the variables found in buf with their values.
  */
-int replace_in_buf(char *buf, const size_t buf_len, const size_t buf_cap, struct variable *vars, size_t var_len)
+int replace_in_buf(char *buf, const size_t buf_len, const size_t buf_cap,
+	struct variable *vars, size_t var_len)
 {
 	size_t dst = 0;
 	size_t var_c = 0;
@@ -501,24 +515,40 @@ int replace_in_buf(char *buf, const size_t buf_len, const size_t buf_cap, struct
 	int result = 0;
 
 	for (; dst < buf_len; ++dst) {
-		struct variable *var = is_variable(buf + dst, vars, var_len);
+		struct variable *var = look_for_variable(buf + dst, vars,
+			var_len);
 		if (var) {
 			result = print_var_to(var, scratch, STRMAX(scratch));
 			if (result != 0) {
-				fprintf(stderr, "Failed to print var %s.\n", var->name);
+				fprintf(stderr, "Failed to print var %s.\n",
+					var->name);
 				return result;
+			}
 			/*
 			 * Make room in the buffer for the printed variable.
 			 */
 			size_t var_len = strlen(scratch);
 			size_t buf_space = buf_cap - buf_len;
 			if (var_len > buf_space) {
-				fprintf(stderr, "Need %u more bytes in buffer.\n", var_len - buf_space);
+				fprintf(stderr,
+					"Need %u more bytes in buffer.\n",
+					var_len - buf_space);
 				return ENOBUFS;
 			}
-			#error Need to know where the end of the variable text is from the $
+			/*
+			 * Move the rest of the buffer down and insert the
+			 * variable.
+			 */
+			size_t var_start = buf + dst;
+			memmove(var_start + var_len, var_start, buf_len - dst);
+
+			/*
+			 * Write the variable in.
+			 */
+			memcpy(var_start, scratch, var_len);
 		}
 	}
+	return 0;
 }
 
 /*
@@ -529,7 +559,7 @@ int asl_get(struct request *r, int client)
 {
 	static file_buf[MEGABYTE];
 	size_t file_len;
-	if (!load_file("asl.html", file_buf, LEN(file_buf), &file_len) {
+	if (!load_file("asl.html", file_buf, LEN(file_buf), &file_len)) {
 		fprintf(stderr, "Failed to open file %s.\n", asl_file);
 		return send_404(client);
 	}
