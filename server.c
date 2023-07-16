@@ -3,6 +3,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
+#include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -83,7 +84,7 @@ struct variable {
 };
 
 struct card {
-	char image[FILENAME_MAX];
+	char file_name[FILENAME_MAX];
 };
 
 struct quiz_item {
@@ -99,6 +100,7 @@ static struct card cards[100];
 static size_t quiz_len = 0;
 static struct quiz_item quiz[LEN(cards) * 2];
 static size_t current_quiz_item = 0;
+const char asl_file[] = "asl.html";
 
 #define NOT_TESTED -1
 
@@ -479,7 +481,8 @@ int send_file(FILE *f, int client, struct pool *p)
 	return 0;
 }
 
-int load_file(const char *file_name, char *buffer, const size_t buf_len, size_t *bytes_loaded)
+int load_file(const char *file_name, char *buffer, const size_t buf_len,
+	size_t *bytes_loaded)
 {
 	assert(bytes_loaded && file_name && buffer && buf_len > 0);
 
@@ -506,67 +509,91 @@ int load_file(const char *file_name, char *buffer, const size_t buf_len, size_t 
 	return result;
 }
 
+int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
+	const char *format, ...)
+{
+	va_list args;
+	int result;
+	char var_str[KILOBYTE] = {0};
+	size_t var_len;
+	size_t buf_space;
+
+	va_start(args, format);
+
+	result = snprintf(var_str, STRMAX(var_str), format, args);
+
+	va_end(args);
+
+	if (result < 0) {
+		fprintf(stderr, "Failed to pack variable.\n");
+		return ENOBUFS;
+	}
+
+	/* Compute how much space is needed. */
+	var_len = strlen(var_str);
+	buf_space = buf_cap - *buf_len;
+	if (var_len > buf_space) {
+		fprintf(stderr, "Need %lu more bytes in buffer.\n",
+			var_len - buf_space);
+		return ENOBUFS;
+	}
+
+	/* Move the rest of the buffer down and insert the variable. */
+	memmove(buf + var_len, buf, *buf_len + var_len);
+	*buf_len += var_len;
+
+	/* Write the variable in. */
+	memcpy(buf, var_str, var_len);
+
+	return result;
+}
+
 /*
  * Replace the variables found in buf with their values.
  */
-int replace_in_buf(char *buf, const size_t buf_len, const size_t buf_cap,
-	struct variable *vars, size_t var_len)
+int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 {
 	size_t dst = 0;
-	size_t var_c = 0;
-	size_t cmp = 0;
-	size_t var_index = 0;
-	char scratch[KILOBYTE];
-	struct variable *var;
 	int result = 0;
 	const char card_var[] = "cards";
+	char *var_start;
+	struct quiz_item *card;
+	const char front_var[] = "front";
+	const char back_var[] = "back";
 
-	for (; dst < buf_len; ++dst) {
-		char *var_start = buf + dst;
-		struct quiz_item *card = quiz + current_quiz_item;
+	for (; (dst < buf_len) && (result == 0); ++dst) {
+		var_start = buf + dst;
+		card = quiz + current_quiz_item;
 		if (memcmp(var_start, card_var, STRMAX(card_var)) == 0) {
-			result = print_var_to(var_start, DT_SIZE_T, quiz_len);
-		} else if (memcmp(var_start, front_var, STRMAX(front_var)
-			== 0))
+			result = print_var_to(var_start, &buf_len, buf_cap,
+				"%lu", quiz_len);
+		} else if (memcmp(var_start, front_var, STRMAX(front_var))
+			== 0)
 		{
-			#error Need to change the html so I can write an image to the back of the card if front is false. That means the image itself is on the back and the file name is on the front.
-			result = print_var_to(var_start, DT_STR,
-				cards[card->card_id].name);
-		}
-		struct variable *var = look_for_variable(buf + dst, vars,
-			var_len);
-		if (var) {
-			result = print_var_to(var, scratch, STRMAX(scratch));
-			if (result != 0) {
-				fprintf(stderr, "Failed to print var %s.\n",
-					var->name);
-				return result;
+			if (card->front) {
+				result = print_var_to(var_start, &buf_len,
+					buf_cap,
+					"<img src=\"%s\" width=\"400\" height=\"400\">\n",
+					cards[card->card_id].file_name);
+			} else {
+				result = print_var_to(var_start, &buf_len,
+					buf_cap, "<p>%s</p>\n",
+					cards[card->card_id].file_name);
 			}
-			/*
-			 * Make room in the buffer for the printed variable.
-			 */
-			size_t var_len = strlen(scratch);
-			size_t buf_space = buf_cap - buf_len;
-			if (var_len > buf_space) {
-				fprintf(stderr,
-					"Need %u more bytes in buffer.\n",
-					var_len - buf_space);
-				return ENOBUFS;
+		} else if (memcmp(var_start, back_var, STRMAX(back_var)) == 0) {
+			if (!card->front) {
+				result = print_var_to(var_start, &buf_len,
+					buf_cap,
+					"<img src=\"%s\" width=\"400\" height=\"400\">\n",
+					cards[card->card_id].file_name);
+			} else {
+				result = print_var_to(var_start, &buf_len,
+					buf_cap, "<p>%s</p>\n",
+					cards[card->card_id].file_name);
 			}
-			/*
-			 * Move the rest of the buffer down and insert the
-			 * variable.
-			 */
-			size_t var_start = buf + dst;
-			memmove(var_start + var_len, var_start, buf_len - dst);
-
-			/*
-			 * Write the variable in.
-			 */
-			memcpy(var_start, scratch, var_len);
 		}
 	}
-	return 0;
+	return result;
 }
 
 /*
@@ -579,11 +606,11 @@ int asl_get(struct request *r, int client)
 
 	static char file_buf[MEGABYTE];
 	size_t file_len;
-	if (!load_file("asl.html", file_buf, LEN(file_buf), &file_len)) {
+	if (!load_file(asl_file, file_buf, LEN(file_buf), &file_len)) {
 		fprintf(stderr, "Failed to open file %s.\n", asl_file);
 		return send_404(client);
 	}
-	if (!replace_in_buf(file_buf, file_len, asl_variables)) {
+	if (!replace_in_buf(file_buf, file_len, LEN(file_buf))) {
 		fprintf(stderr, "Failed to replace variables in file.\n");
 		return send_404(client);
 	}
@@ -773,7 +800,8 @@ int found_image(char *image)
 		fprintf(stderr, "Out of quiz space: %lu/%lu\n", quiz_len, LEN(quiz));
 		return ENOBUFS;
 	}
-	strncpy(cards[card_count].image, image, STRMAX(cards[card_count].image));
+	strncpy(cards[card_count].file_name, image,
+		STRMAX(cards[card_count].file_name));
 	quiz[quiz_len].card_id = card_count;
 	quiz[quiz_len].front = 0;
 	quiz[quiz_len].confidence = NOT_TESTED;
