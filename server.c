@@ -68,7 +68,39 @@ int get_error(void)
 #define LEN(p) (sizeof(p) / sizeof(p[0]))
 #define STRMAX(p) (LEN(p) - 1)
 
-const unsigned short port = 8080;
+enum var_type {
+	VT_SIZE_T,
+	VT_STR,
+};
+
+struct variable {
+	char name[256];
+	enum var_type type;
+	union value {
+		size_t st;
+		char value[256];
+	} value;
+};
+
+struct card {
+	char image[FILENAME_MAX];
+};
+
+struct quiz_item {
+	size_t card_id;
+	int front;
+	int confidence;
+};
+
+static const unsigned short port = 8080;
+static const char ok_header[] = "HTTP/1.1 200 OK";
+static size_t card_count = 0;
+static struct card cards[100];
+static size_t quiz_len = 0;
+static struct quiz_item quiz[LEN(cards) * 2];
+static size_t current_quiz_item = 0;
+
+#define NOT_TESTED -1
 
 void print(struct sockaddr_in *address)
 {
@@ -407,7 +439,6 @@ int send_file(FILE *f, int client, struct pool *p)
 	char *contents;
 	long file_size;
 	size_t chars_read;
-	static const char header[] = "HTTP/1.1 200 OK";
 	int result;
 
 	(void)p;
@@ -440,7 +471,7 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 
-	result = send_data(client, header, contents, (size_t)file_size);
+	result = send_data(client, ok_header, contents, (size_t)file_size);
 	if (result < 0) {
 		fprintf(stderr, "Failed to send message.\n");
 		return errno;
@@ -475,31 +506,6 @@ int load_file(const char *file_name, char *buffer, const size_t buf_len, size_t 
 	return result;
 }
 
-enum var_type {
-	VT_SIZE_T,
-	VT_STR,
-};
-
-struct variable {
-	char name[256];
-	enum var_type type;
-	union value {
-		size_t st;
-		char value[256];
-	} vlaue;
-};
-
-struct variable *look_for_variable(const char *buf, struct variable *vars,
-	const size_t var_len)
-{
-	for (size_t i = 0; i < var_len; ++i) {
-		if (strncmp(buf, vars[i].name, strlen(vars[i].name)) == 0) {
-			return vars + i;
-		}
-	}
-	return NULL;
-}
-
 /*
  * Replace the variables found in buf with their values.
  */
@@ -513,8 +519,20 @@ int replace_in_buf(char *buf, const size_t buf_len, const size_t buf_cap,
 	char scratch[KILOBYTE];
 	struct variable *var;
 	int result = 0;
+	const char card_var[] = "cards";
 
 	for (; dst < buf_len; ++dst) {
+		char *var_start = buf + dst;
+		struct quiz_item *card = quiz + current_quiz_item;
+		if (memcmp(var_start, card_var, STRMAX(card_var)) == 0) {
+			result = print_var_to(var_start, DT_SIZE_T, quiz_len);
+		} else if (memcmp(var_start, front_var, STRMAX(front_var)
+			== 0))
+		{
+			#error Need to change the html so I can write an image to the back of the card if front is false. That means the image itself is on the back and the file name is on the front.
+			result = print_var_to(var_start, DT_STR,
+				cards[card->card_id].name);
+		}
 		struct variable *var = look_for_variable(buf + dst, vars,
 			var_len);
 		if (var) {
@@ -557,7 +575,9 @@ int replace_in_buf(char *buf, const size_t buf_len, const size_t buf_cap,
  */
 int asl_get(struct request *r, int client)
 {
-	static file_buf[MEGABYTE];
+	(void)r;
+
+	static char file_buf[MEGABYTE];
 	size_t file_len;
 	if (!load_file("asl.html", file_buf, LEN(file_buf), &file_len)) {
 		fprintf(stderr, "Failed to open file %s.\n", asl_file);
@@ -567,7 +587,7 @@ int asl_get(struct request *r, int client)
 		fprintf(stderr, "Failed to replace variables in file.\n");
 		return send_404(client);
 	}
-	return send_buf(file_buf, file_len, client);
+	return send_data(client, ok_header, file_buf, file_len);
 }
 
 /*
@@ -737,21 +757,6 @@ int serve(int server_sock)
 	return result;
 }
 
-struct card {
-	char image[FILENAME_MAX];
-};
-
-struct quiz_item {
-	size_t card_id;
-	int front;
-	int confidence;
-};
-
-static size_t card_count = 0;
-static struct card cards[100];
-static size_t quiz_len = 0;
-static struct quiz_item quiz[LEN(cards) * 2];
-#define NOT_TESTED -1
 
 /*
  * Create a new card entry, then create two quiz items in the quiz for the card.
