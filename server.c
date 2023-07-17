@@ -528,6 +528,7 @@ int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
 		fprintf(stderr, "Failed to pack variable.\n");
 		return ENOBUFS;
 	}
+	result = 0;
 
 	/* Compute how much space is needed. */
 	var_len = strlen(var_str);
@@ -561,13 +562,19 @@ int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 	const char front_var[] = "front";
 	const char back_var[] = "back";
 
-	for (; (dst < buf_len) && (result == 0); ++dst) {
+	for (; (dst < buf_len) && (buf_len < buf_cap) && (result == 0); ++dst) {
+		if (buf[dst] != '$') {
+			continue;
+		}
 		var_start = buf + dst;
+		printf("variable dst:%lu buf_len:%lu \"%.20s\"\n", dst,
+			buf_len, var_start);
 		card = quiz + current_quiz_item;
-		if (memcmp(var_start, card_var, STRMAX(card_var)) == 0) {
+		if (memcmp(var_start + 1, card_var, STRMAX(card_var)) == 0) {
+			printf("Found cards var.\n");
 			result = print_var_to(var_start, &buf_len, buf_cap,
 				"%lu", quiz_len);
-		} else if (memcmp(var_start, front_var, STRMAX(front_var))
+		} else if (memcmp(var_start + 1, front_var, STRMAX(front_var))
 			== 0)
 		{
 			if (card->front) {
@@ -580,14 +587,16 @@ int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 					buf_cap, "<p>%s</p>\n",
 					cards[card->card_id].file_name);
 			}
-		} else if (memcmp(var_start, back_var, STRMAX(back_var)) == 0) {
+		} else if (memcmp(var_start + 1, back_var, STRMAX(back_var))
+			== 0)
+		{
 			if (!card->front) {
-				result = print_var_to(var_start, &buf_len,
+				result = print_var_to(var_start + 1, &buf_len,
 					buf_cap,
 					"<img src=\"%s\" width=\"400\" height=\"400\">\n",
 					cards[card->card_id].file_name);
 			} else {
-				result = print_var_to(var_start, &buf_len,
+				result = print_var_to(var_start + 1, &buf_len,
 					buf_cap, "<p>%s</p>\n",
 					cards[card->card_id].file_name);
 			}
@@ -606,11 +615,11 @@ int asl_get(struct request *r, int client)
 
 	static char file_buf[MEGABYTE];
 	size_t file_len;
-	if (!load_file(asl_file, file_buf, LEN(file_buf), &file_len)) {
-		fprintf(stderr, "Failed to open file %s.\n", asl_file);
+	if (load_file(asl_file, file_buf, LEN(file_buf), &file_len)) {
+		fprintf(stderr, "Failed to load %s.\n", asl_file);
 		return send_404(client);
 	}
-	if (!replace_in_buf(file_buf, file_len, LEN(file_buf))) {
+	if (replace_in_buf(file_buf, file_len, LEN(file_buf))) {
 		fprintf(stderr, "Failed to replace variables in file.\n");
 		return send_404(client);
 	}
@@ -624,7 +633,7 @@ int asl_get(struct request *r, int client)
 int handle_get_request(int client, struct request *request, struct pool *p)
 {
 	printf("Getting \"%s\"\n", request->path);
-	if (strcmp(request->path, "/asl.html") == 0) {
+	if (strcmp(request->path, "asl.html") == 0) {
 		return asl_get(request, client);
 	}
 	FILE *f = NULL;
