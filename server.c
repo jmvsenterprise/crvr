@@ -520,7 +520,7 @@ int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
 
 	va_start(args, format);
 
-	result = snprintf(var_str, STRMAX(var_str), format, args);
+	result = vsnprintf(var_str, STRMAX(var_str), format, args);
 
 	va_end(args);
 
@@ -540,7 +540,7 @@ int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
 	}
 
 	/* Move the rest of the buffer down and insert the variable. */
-	memmove(buf + var_len, buf, *buf_len + var_len);
+	memmove(buf, buf + var_len, *buf_len + var_len);
 	*buf_len += var_len;
 
 	/* Write the variable in. */

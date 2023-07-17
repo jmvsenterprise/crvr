@@ -11,15 +11,17 @@
     <h1>ASL Quizzer</h1>
     <p>Remaining Cards: $cards</p>
     <div id="front_div">
+      <h2>Front</h2>
       <p>
-        <img src="$front" width="400" height="400">
+        $front
       <p>
       <p>
         <input type="button" id="reveal_btn" name="reveal" onclick="reveal" value="Reveal">
       <p>
     </div>
     <div id="back_div" style="display:none;">
-      <p>Back: $back</p>
+      <h2>Back</h2>
+      $back
       <p>How confident were you?</p>
       <form method="post" action="/asl.html">
         <input type="submit" name="poor_button" id="poor_button" value="poor">

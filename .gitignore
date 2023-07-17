@@ -12,3 +12,4 @@ config.mk
 *.obj
 *.o
 *.jpeg
+*.png
