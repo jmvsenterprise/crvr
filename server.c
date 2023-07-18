@@ -539,6 +539,8 @@ int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
 		return ENOBUFS;
 	}
 
+	#error need to remove the variable text from the buffer.
+
 	/* Move the rest of the buffer down and insert the variable. */
 	memmove(buf, buf + var_len, *buf_len + var_len);
 	*buf_len += var_len;
