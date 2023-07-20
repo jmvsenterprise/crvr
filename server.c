@@ -576,11 +576,11 @@ int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 {
 	size_t dst = 0;
 	int result = 0;
-	const char card_var[] = "cards";
 	char *var_start;
 	struct quiz_item *card;
-	const char front_var[] = "front";
-	const char back_var[] = "back";
+	const char card_var[] = "$cards";
+	const char front_var[] = "$front";
+	const char back_var[] = "$back";
 
 	for (; (dst < buf_len) && (buf_len < buf_cap) && (result == 0); ++dst) {
 		if (buf[dst] != '$') {
@@ -590,11 +590,11 @@ int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 		printf("variable dst:%lu buf_len:%lu \"%.20s\"\n", dst,
 			buf_len, var_start);
 		card = quiz + current_quiz_item;
-		if (memcmp(var_start + 1, card_var, STRMAX(card_var)) == 0) {
+		if (memcmp(var_start, card_var, STRMAX(card_var)) == 0) {
 			printf("Found cards var.\n");
 			result = print_var_to(var_start, &buf_len, buf_cap,
 				card_var, "%lu", quiz_len);
-		} else if (memcmp(var_start + 1, front_var, STRMAX(front_var))
+		} else if (memcmp(var_start, front_var, STRMAX(front_var))
 			== 0)
 		{
 			if (card->front) {
@@ -607,7 +607,7 @@ int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 					buf_cap, front_var, "<p>%s</p>\n",
 					cards[card->card_id].file_name);
 			}
-		} else if (memcmp(var_start + 1, back_var, STRMAX(back_var))
+		} else if (memcmp(var_start, back_var, STRMAX(back_var))
 			== 0)
 		{
 			if (!card->front) {
