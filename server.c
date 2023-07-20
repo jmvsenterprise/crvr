@@ -8,6 +8,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/stat.h>
+#include <sys/types.h>
+#include <unistd.h>
 
 #include "pool.h"
 
@@ -157,7 +160,7 @@ void print_blob(const char *blob, const size_t len, int max_lines)
 			}
 			printf("0x%08x: ", line_offset);
 			for (size_t c = 0; c < LEN(line); ++c) {
-				printf("%02.2hhx ", line[c]);
+				printf("%2.2hhx ", line[c]);
 			}
 			for (size_t c = 0; c < LEN(line); ++c) {
 				if (isalnum(line[c]) || ispunct(line[c])) {
@@ -175,7 +178,7 @@ void print_blob(const char *blob, const size_t len, int max_lines)
 	if (count > 0) {
 		printf("0x%08x: ", line_offset);
 		for (size_t c = 0; c < count; ++c) {
-			printf("%02.2hhx ", line[c]);
+			printf("%2.2hhx ", line[c]);
 		}
 		for (size_t c = 0; c < count; ++c) {
 			if (isalnum(line[c]) || ispunct(line[c])) {
@@ -233,6 +236,7 @@ header_find_value(struct request *r, const char *key)
 int parse_request_buffer(struct request *request)
 {
 	const char eol[] = "\r\n";
+	const char index_page[] = "index.html";
 
 	// Type, path and format are all on the first line.
 	char *end_of_line = strstr(request->buffer, eol);
@@ -284,14 +288,15 @@ int parse_request_buffer(struct request *request)
 	 * If start is empty, default to index.html.
 	 */
 	if (strlen(start) == 0) {
-		strncpy(request->path, "index.html", STRMAX(request->path));
+		strncpy(request->path, index_page, STRMAX(request->path));
 	} else {
 		strncpy(request->path, start, STRMAX(request->path));
 	}
-	// If it is a directory (ends in /) append an index.html.
+	// If it is a directory (ends in /) append "index.html".
 	size_t path_len = strlen(request->path);
 	if (request->path[path_len] == '/') {
-		strlcat(request->path, "index.html", STRMAX(request->path));
+		strncat(request->path, index_page, strlen(request->path) -
+			STRMAX(index_page));
 	}
 
 	// The rest of the line is the format.
@@ -555,7 +560,7 @@ int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
 	/* Move the rest of the buffer down and insert the variable. */
 	printf("var_len: %lu var_name_len: %lu *buf_len: %lu.\n", var_len,
 		var_name_len, *buf_len);
-	memmove(buf, buf + var_len + var_name_len, *buf_len + var_len);
+	memmove(buf, buf - var_len + var_name_len, *buf_len + var_len);
 	*buf_len += var_len - var_name_len;
 
 	/* Write the variable in. */
@@ -851,6 +856,7 @@ int find_image_files(void)
 		".jpeg",
 	};
 	int result = 0;
+	struct stat stats;
 
 	cwd = opendir(".");
 	if (!cwd) {
@@ -858,17 +864,23 @@ int find_image_files(void)
 		return errno;
 	}
 	while ((entry = readdir(cwd))) {
-		if (entry->d_type != DT_REG) {
-			printf("%s is not a regular file. Skipping.\n", entry->d_name);
+		if (stat(entry->d_name, &stats) != 0) {
+			fprintf(stderr, "Failed to stat %s: %i.\n",
+				entry->d_name, errno);
+			continue;
+		}
+		if (S_ISREG(stats.st_mode)) {
+			printf("%s is not a regular file. Skipping.\n",
+				entry->d_name);
 			continue;
 		}
 		for (size_t type = 0; type < LEN(file_types); ++type) {
 			int match = 1;
 			size_t last_ft_char = strlen(file_types[type]) - 1;
-			size_t last_dir_char = entry->d_namlen - 1;
+			size_t last_dir_char = strlen(entry->d_name);
 			while ((last_ft_char > 0) && (last_dir_char > 0)) {
-				if (file_types[type][last_ft_char] != entry->d_name[last_dir_char]) {
-					printf("%s did not match %s.\n", entry->d_name, file_types[type]);
+				if (file_types[type][last_ft_char] !=
+						entry->d_name[last_dir_char]) {
 					match = 0;
 					break;
 				}
@@ -878,17 +890,20 @@ int find_image_files(void)
 			if (match) {
 				result = found_image(entry->d_name) != 0;
 				if (result != 0) {
-					fprintf(stderr, "Failed to add image.\n");
+					fprintf(stderr,
+						"Failed to add image.\n");
 				}
-				/* Don't look for any other file type matches. */
+				/*
+				 * Don't look for any other file type matches.
+				 */
 				break;
 			}
 		}
 	}
 	(void)closedir(cwd);
 
-	printf("Loaded %lu/%lu cards, %lu/%lu quiz items.\n", card_count, LEN(cards),
-		quiz_len, LEN(quiz));
+	printf("Loaded %lu/%lu cards, %lu/%lu quiz items.\n", card_count,
+		LEN(cards), quiz_len, LEN(quiz));
 	return result;
 }
 
