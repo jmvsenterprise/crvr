@@ -869,7 +869,7 @@ int find_image_files(void)
 				entry->d_name, errno);
 			continue;
 		}
-		if (S_ISREG(stats.st_mode)) {
+		if (!S_ISREG(stats.st_mode)) {
 			printf("%s is not a regular file. Skipping.\n",
 				entry->d_name);
 			continue;
@@ -888,6 +888,8 @@ int find_image_files(void)
 				last_dir_char--;
 			}
 			if (match) {
+				printf("%s matched %s.\n", entry->d_name,
+					file_types[type]);
 				result = found_image(entry->d_name) != 0;
 				if (result != 0) {
 					fprintf(stderr,
