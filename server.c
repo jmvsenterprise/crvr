@@ -394,11 +394,8 @@ int send_data(int client, const char *header, const char *contents,
 		fprintf(stderr, "Buf write failure. %d.\n", errno);
 		return errno;
 	}
-	printf("Header is %d.\n", bytes);
-	memcpy(buffer + bytes, contents, content_len);
-	bytes += content_len;
-	printf("Total buffer is %d.\n", bytes);
 
+	// Send header
 	ssize_t bytes_sent = write(client, buffer, (size_t)bytes);
 	if (bytes_sent == -1) {
 		fprintf(stderr, "Failed to write buffer to client! %d\n",
@@ -406,12 +403,24 @@ int send_data(int client, const char *header, const char *contents,
 		return -1;
 	}
 	if (bytes_sent != bytes) {
-		fprintf(stderr,
-			"Failed to send buffer to client!\nOnly wrote %ld of %d bytes\n",
-			bytes_sent, bytes);
+		fprintf(stderr, "Only sent %ld of %d of header\n", bytes_sent,
+			bytes);
 		return -1;
 	}
-	printf("Sent %lu/%d bytes.\n", (size_t)bytes_sent, bytes);
+	printf("Sent %ld byte header and ", bytes_sent);
+
+	// Send contents
+	bytes_sent = write(client, contents, content_len);
+	if (bytes_sent == -1) {
+		perror("Failed to write buffer to client.");
+		return errno;
+	}
+	if ((size_t)bytes_sent != content_len) {
+		fprintf(stderr, "Only sent %ld of %ld of the content.\n",
+			bytes_sent, content_len);
+		return -1;
+	}
+	printf("%ld byte content.\n", bytes_sent);
 	return 0;
 }
 
