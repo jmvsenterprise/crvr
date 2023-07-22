@@ -846,15 +846,45 @@ int found_image(char *image)
 	return 0;
 }
 
-int find_image_files(void)
+int is_image(const char *file)
 {
-	DIR *cwd;
-	struct dirent *entry;
 	char *file_types[] = {
 		".png",
 		".jpg",
 		".jpeg",
 	};
+	int match;
+	/*
+	 * Loop through every character in the file type looking for the first
+	 * character that doesn't match. If everything matched, return nonzero.
+	 */
+	const size_t name_len = strlen(file);
+
+	for (size_t type = 0; type < LEN(file_types); ++type) {
+		const size_t type_len = strlen(file_types[type]);
+		if (name_len < type_len) {
+			// Not a match.
+			continue;
+		}
+		match = 1;
+		const size_t ext_start = name_len - type_len;
+		for (size_t i = 0; (i <= type_len) && (match); ++i) {
+			if (file[ext_start + i] != file_types[type][i]) {
+				match = 0;
+			}
+		}
+		if (match) {
+			printf("%s matched %s.\n", file, file_types[type]);
+			return 1;
+		}
+	}
+	return 0;
+}
+
+int find_image_files(void)
+{
+	DIR *cwd;
+	struct dirent *entry;
 	int result = 0;
 	struct stat stats;
 
@@ -874,32 +904,13 @@ int find_image_files(void)
 				entry->d_name);
 			continue;
 		}
-		for (size_t type = 0; type < LEN(file_types); ++type) {
-			int match = 1;
-			size_t last_ft_char = strlen(file_types[type]) - 1;
-			size_t last_dir_char = strlen(entry->d_name);
-			while ((last_ft_char > 0) && (last_dir_char > 0)) {
-				if (file_types[type][last_ft_char] !=
-						entry->d_name[last_dir_char]) {
-					match = 0;
-					break;
-				}
-				last_ft_char--;
-				last_dir_char--;
+		if (is_image(entry->d_name)) {
+			result = found_image(entry->d_name) != 0;
+			if (result != 0) {
+				fprintf(stderr, "Failed to add image.\n");
 			}
-			if (match) {
-				printf("%s matched %s.\n", entry->d_name,
-					file_types[type]);
-				result = found_image(entry->d_name) != 0;
-				if (result != 0) {
-					fprintf(stderr,
-						"Failed to add image.\n");
-				}
-				/*
-				 * Don't look for any other file type matches.
-				 */
-				break;
-			}
+		} else {
+			printf("%s not an image.\n", entry->d_name);
 		}
 	}
 	(void)closedir(cwd);
