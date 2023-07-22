@@ -72,20 +72,6 @@ int get_error(void)
 #define LEN(p) (sizeof(p) / sizeof(p[0]))
 #define STRMAX(p) (LEN(p) - 1)
 
-enum var_type {
-	VT_SIZE_T,
-	VT_STR,
-};
-
-struct variable {
-	char name[256];
-	enum var_type type;
-	union value {
-		size_t st;
-		char value[256];
-	} value;
-};
-
 struct card {
 	char file_name[FILENAME_MAX];
 };
@@ -403,12 +389,15 @@ int send_data(int client, const char *header, const char *contents,
 	memset(buffer, 0, LEN(buffer));
 
 	bytes = snprintf(buffer, STRMAX(buffer),
-		"%s\r\nContent Length: %lu\r\n\r\n%s", header, content_len,
-		contents);
+		"%s\r\nContent Length: %lu\r\n\r\n", header, content_len);
 	if (bytes < 0) {
 		fprintf(stderr, "Buf write failure. %d.\n", errno);
 		return errno;
 	}
+	printf("Header is %d.\n", bytes);
+	memcpy(buffer + bytes, contents, content_len);
+	bytes += content_len;
+	printf("Total buffer is %d.\n", bytes);
 
 	ssize_t bytes_sent = write(client, buffer, (size_t)bytes);
 	if (bytes_sent == -1) {
@@ -422,6 +411,7 @@ int send_data(int client, const char *header, const char *contents,
 			bytes_sent, bytes);
 		return -1;
 	}
+	printf("Sent %lu/%d bytes.\n", (size_t)bytes_sent, bytes);
 	return 0;
 }
 
@@ -446,7 +436,7 @@ int send_file(FILE *f, int client, struct pool *p)
 	char *contents;
 	long file_size;
 	size_t chars_read;
-	int result;
+	int result = 0;
 
 	(void)p;
 
@@ -463,27 +453,30 @@ int send_file(FILE *f, int client, struct pool *p)
 		perror("Failed to seek to beginning of the file.\n");
 		return -1;
 	}
+	printf("File is %lu bytes.\n", file_size);
 	contents = calloc((size_t)file_size, sizeof(*contents));
 	if (!contents) {
 		fprintf(stderr, "Failed to allocate buffer for file: %d.\n",
 			errno);
 		return errno;
-	}
+	} else {
+		chars_read = fread((void*)contents, sizeof(*contents),
+			(size_t)file_size, f);
+		if (chars_read != (size_t)file_size) {
+			printf("Failed to read in file: %lu of %ld\n",
+				chars_read, file_size);
+			result = errno;
+		}
 
-	chars_read = fread((void*)contents, sizeof(*contents),
-		(size_t)file_size, f);
-	if (chars_read != (size_t)file_size) {
-		printf("Failed to read in the entire file: %lu of %ld\n",
-			chars_read, file_size);
-		return -1;
+		result = send_data(client, ok_header, contents,
+			(size_t)file_size);
+		if (result < 0) {
+			fprintf(stderr, "Failed to send message.\n");
+			result = errno;
+		}
+		free(contents);
 	}
-
-	result = send_data(client, ok_header, contents, (size_t)file_size);
-	if (result < 0) {
-		fprintf(stderr, "Failed to send message.\n");
-		return errno;
-	}
-	return 0;
+	return result;
 }
 
 int load_file(const char *file_name, char *buffer, const size_t buf_len,
@@ -654,8 +647,10 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 {
 	printf("Getting \"%s\"\n", request->path);
 	if (strcmp(request->path, "asl.html") == 0) {
+		printf("Dynamic URI\n");
 		return asl_get(request, client);
 	}
+	printf("Regular URI\n");
 	FILE *f = NULL;
 	f = fopen(request->path, "r");
 	if (!f) {
@@ -920,6 +915,18 @@ int find_image_files(void)
 	return result;
 }
 
+void shuffle_cards(void)
+{
+	for (size_t i = 0; i < quiz_len; ++i) {
+		size_t new_pos = ((size_t)rand()) % quiz_len;
+		if (new_pos == i)
+			continue;
+		struct quiz_item tmp = quiz[i];
+		quiz[i] = quiz[new_pos];
+		quiz[new_pos] = tmp;
+	}
+}
+
 int main()
 {
 	int result = 0;
@@ -927,6 +934,7 @@ int main()
 		fprintf(stderr, "Failed to find image files.\n");
 		return -1;
 	}
+	shuffle_cards();
 	if (init_socket_layer() != 0) {
 		printf("Failed to initialize the socket layer\n");
 	}
