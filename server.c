@@ -673,9 +673,11 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 
 int asl_post(struct request *r, int client)
 {
-	// Nothing for the moment.
 	(void)r;
 	(void)client;
+
+	printf("params=\"%s\"\n", r->parameters);
+
 	return 0;
 }
 
@@ -699,7 +701,7 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		return EINVAL;
 	}
 	total_len = strtol(value, NULL, 10);
-	if ((total_len == 0) && ((errno == EINVAL) || (errno == ERANGE))) {
+	if ((errno == EINVAL) || (errno == ERANGE)) {
 		fprintf(stderr, "Failed to convert %s to long. %u.\n", value,
 			errno);
 		return ERANGE;
@@ -708,7 +710,14 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		fprintf(stderr, "Invalid content length %lu.\n", total_len);
 		return EINVAL;
 	}
-	bytes_needed = (size_t)total_len - bytes_received;
+	printf("content length is %ld\n", total_len);
+	bytes_needed = (size_t)total_len;
+
+	if (bytes_needed > GIGABYTE) {
+		fprintf(stderr, "Request too big: %lu. Max: %d.\n",
+			bytes_needed, GIGABYTE);
+		return EINVAL;
+	}
 	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
 		bytes_received, bytes_needed);
 	
@@ -807,10 +816,10 @@ int serve(int server_sock)
 			if (result != 0) {
 				printf("Handling the client failed: %d\n",
 					result);
-				keep_running = 0;
 			}
 		} else {
-			printf("Error accepting client connection: %d.\n", get_error());
+			printf("Error accepting client connection: %d.\n",
+				get_error());
 		}
 	}
 	pool_free(&p);
