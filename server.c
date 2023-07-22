@@ -124,6 +124,14 @@ struct request {
 	char *parameters;
 };
 
+#define PARAM_NAME_MAX 256
+#define PARAM_VALUE_MAX 1024
+
+struct param {
+	char name[PARAM_NAME_MAX];
+	char value[PARAM_VALUE_MAX];
+};
+
 /*
  * Print blob which is len bytes long. If max_lines is -1, print the entire blob.
  * If max_lines is > 0, print at most that many lines of blob. A "line" contains
@@ -673,10 +681,39 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 
 int asl_post(struct request *r, int client)
 {
-	(void)r;
 	(void)client;
 
+	const char poor_btn[] = "poor";
+	const char good_btn[] = "good";
+	const char great_btn[] = "great";
+
 	printf("params=\"%s\"\n", r->parameters);
+
+	struct param button = {0};
+	if (find_param(&button, r, "button") != 0) {
+		// No button param!
+		perror("No button param in parameters.\n");
+		return EINVAL;
+	}
+
+	struct quiz_item *card = quiz + current_quiz_item;
+	if (strcmp(poor_btn, button.value) == 0) {
+		// Review this card again one day later.
+		card->next_review = 1;
+	} else if (strcmp(good_btn, button.value) == 0) {
+		// Review this card in 3 days.
+		card->next_review = 3;
+	} else if (strcmp(great_btn, button.value) == 0) {
+		// Review this card again in 1.5 * its current day count.
+		card->next_review = (size_t)(card->next_review * 1.5);
+	}
+	current_quiz_item++;
+	if (current_quiz_item > quiz_len) {
+		// Show done page and show score!
+		show_done_page();
+	} else {
+		return asl_get(r, client);
+	}
 
 	return 0;
 }
