@@ -10,6 +10,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <time.h>
 #include <unistd.h>
 
 #include "pool.h"
@@ -69,6 +70,8 @@ int get_error(void)
 #define MEGABYTE (1000000)
 #define GIGABYTE (1000000000)
 
+#define SECONDS_PER_DAY (60 * 60 * 24)
+
 #define LEN(p) (sizeof(p) / sizeof(p[0]))
 #define STRMAX(p) (LEN(p) - 1)
 
@@ -80,6 +83,7 @@ struct quiz_item {
 	size_t card_id;
 	int front;
 	int confidence;
+	time_t next_review;
 };
 
 static const unsigned short port = 8080;
@@ -679,6 +683,24 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 	return result;
 }
 
+int show_done_page(int client)
+{
+	FILE *f = fopen("asl_done.html", "r");
+	if (!f) {
+		perror("Failed to open file");
+		return errno;
+	}
+	return send_file(f, client, NULL);
+}
+
+int find_param(struct param out[static 1], struct request r[static 1],
+	const char *param_name)
+{
+	if (!param_name)
+		return EINVAL;
+	char *param = strnstr(r->parameters, param_name, r->param_len);
+}
+
 int asl_post(struct request *r, int client)
 {
 	(void)client;
@@ -698,19 +720,26 @@ int asl_post(struct request *r, int client)
 
 	struct quiz_item *card = quiz + current_quiz_item;
 	if (strcmp(poor_btn, button.value) == 0) {
-		// Review this card again one day later.
-		card->next_review = 1;
+		// Review this card again during this quiz and reduce the
+		// confidence by half.
+		card->confidence *= 0.5;
 	} else if (strcmp(good_btn, button.value) == 0) {
-		// Review this card in 3 days.
-		card->next_review = 3;
+		// Boost the confidence by 1 and review this card that many
+		// days in the future.
+		card->confidence += 1;
+		card->next_review = time(NULL) + (SECONDS_PER_DAY *
+			card->confidence);
 	} else if (strcmp(great_btn, button.value) == 0) {
-		// Review this card again in 1.5 * its current day count.
-		card->next_review = (size_t)(card->next_review * 1.5);
+		// Double the confidence and review the card that many days in
+		// the future.
+		card->confidence *= 2;
+		card->next_review = time(NULL) + (SECONDS_PER_DAY *
+			card->confidence);
 	}
 	current_quiz_item++;
 	if (current_quiz_item > quiz_len) {
 		// Show done page and show score!
-		show_done_page();
+		show_done_page(client);
 	} else {
 		return asl_get(r, client);
 	}
@@ -884,10 +913,12 @@ int found_image(char *image)
 	quiz[quiz_len].card_id = card_count;
 	quiz[quiz_len].front = 0;
 	quiz[quiz_len].confidence = NOT_TESTED;
+	quiz[quiz_len].next_review = time(NULL);
 	quiz_len++;
 	quiz[quiz_len].card_id = card_count;
 	quiz[quiz_len].front = 1;
 	quiz[quiz_len].confidence = NOT_TESTED;
+	quiz[quiz_len].next_review = time(NULL);
 	quiz_len++;
 	card_count++;
 
