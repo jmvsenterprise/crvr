@@ -699,6 +699,25 @@ int find_param(struct param out[static 1], struct request r[static 1],
 	if (!param_name)
 		return EINVAL;
 	char *param = strnstr(r->parameters, param_name, r->param_len);
+	if (!param) {
+		return EINVAL;
+	}
+	size_t param_name_len = strlen(param_name);
+	(void)strncpy(out->name, param_name, param_name_len);
+
+	size_t param_value_offset = param_name_len + sizeof('=');
+	param += param_value_offset;
+	// This might be wrong. params might be separated by ;. need to verify.
+	char *eol = strnstr(param, "\r\n", r->param_len - param_value_offset);
+
+	// Assume eol is null
+	size_t value_len = r->param_len - param_value_offset;
+	if (eol != NULL) {
+		value_len = (size_t)(eol - param);
+	}
+	(void)strncpy(out->value, param, value_len);
+
+	return 0;
 }
 
 int asl_post(struct request *r, int client)
@@ -718,11 +737,13 @@ int asl_post(struct request *r, int client)
 		return EINVAL;
 	}
 
+	printf("button param: %s:%s.\n", button.name, button.value);
+
 	struct quiz_item *card = quiz + current_quiz_item;
 	if (strcmp(poor_btn, button.value) == 0) {
 		// Review this card again during this quiz and reduce the
 		// confidence by half.
-		card->confidence *= 0.5;
+		card->confidence = (int)((float)card->confidence * 0.5);
 	} else if (strcmp(good_btn, button.value) == 0) {
 		// Boost the confidence by 1 and review this card that many
 		// days in the future.
@@ -735,6 +756,8 @@ int asl_post(struct request *r, int client)
 		card->confidence *= 2;
 		card->next_review = time(NULL) + (SECONDS_PER_DAY *
 			card->confidence);
+	} else {
+		printf("Unrecognized button value: \"%s\"\n", button.value);
 	}
 	current_quiz_item++;
 	if (current_quiz_item > quiz_len) {
