@@ -67,8 +67,11 @@ int get_error(void)
 #endif
 
 #define KILOBYTE (1000)
+#define KIBIBYTE (1024)
 #define MEGABYTE (1000000)
+#define MEBIBYTE (KIBIBYTE * KIBIBYTE)
 #define GIGABYTE (1000000000)
+#define GIBIBYTE (MIBIBYTE * MIBIBYTE)
 
 #define SECONDS_PER_DAY (60 * 60 * 24)
 
@@ -683,6 +686,32 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 	return result;
 }
 
+/*
+ * Load the file in and replace variables in it. Then send the file to the
+ * client. This routine only supports reading in a 4k file. And it allocates
+ * enough room to add 2k of parameter data to that file.
+ *
+ * It returns 0 on success or an errno on failure.
+ */
+int send_file_with_replaced_params(FILE *f, int client)
+{
+	/* Allocate 4KiB for the file and 2KiB for agmentation by parameter
+	 * data. */
+	char buf[4 * KIBIBYTE * 2];
+
+	size_t buf_used = fread(buf, 1, sizeof(buf), f);
+	if (ferror(f)) {
+		perror("Failed to read file.");
+		return EIO;
+	}
+	int result = replace_in_buf(buf, &buf_used, LEN(buf));
+	if (result != 0) {
+		perror("Failed to replace paramters in file.");
+		return result;
+	}
+	return send_data(client, ok_header, buf, buf_used);
+}
+
 int show_done_page(int client)
 {
 	FILE *f = fopen("asl_done.html", "r");
@@ -690,7 +719,7 @@ int show_done_page(int client)
 		perror("Failed to open file");
 		return errno;
 	}
-	return send_file(f, client, NULL);
+	return send_file_with_replaced_params(f, client);
 }
 
 int find_param(struct param out[static 1], struct request r[static 1],
