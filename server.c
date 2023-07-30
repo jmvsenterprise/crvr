@@ -598,6 +598,7 @@ int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap)
 	const char card_var[] = "$cards";
 	const char front_var[] = "$front";
 	const char back_var[] = "$back";
+	const char card_count_var[] = "$card_count";
 
 	for (; (dst < *buf_len) && (*buf_len < buf_cap) && (result == 0);
 			++dst) {
@@ -638,6 +639,10 @@ int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap)
 					buf_cap, back_var, "<p>%s</p>\n",
 					cards[card->card_id].file_name);
 			}
+		} else if (memcmp(var_start, card_count_var,
+				STRMAX(card_count_var)) == 0) {
+			result = print_var_to(var_start, buf_len, buf_cap,
+				card_count_var, "%lu", quiz_len);
 		}
 	}
 	return result;
