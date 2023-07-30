@@ -589,7 +589,7 @@ int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
 /*
  * Replace the variables found in buf with their values.
  */
-int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
+int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap)
 {
 	size_t dst = 0;
 	int result = 0;
@@ -599,28 +599,29 @@ int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 	const char front_var[] = "$front";
 	const char back_var[] = "$back";
 
-	for (; (dst < buf_len) && (buf_len < buf_cap) && (result == 0); ++dst) {
+	for (; (dst < *buf_len) && (*buf_len < buf_cap) && (result == 0);
+			++dst) {
 		if (buf[dst] != '$') {
 			continue;
 		}
 		var_start = buf + dst;
 		printf("variable dst:%lu buf_len:%lu \"%.20s\"\n", dst,
-			buf_len, var_start);
+			*buf_len, var_start);
 		card = quiz + current_quiz_item;
 		if (memcmp(var_start, card_var, STRMAX(card_var)) == 0) {
 			printf("Found cards var.\n");
-			result = print_var_to(var_start, &buf_len, buf_cap,
+			result = print_var_to(var_start, buf_len, buf_cap,
 				card_var, "%lu", quiz_len);
 		} else if (memcmp(var_start, front_var, STRMAX(front_var))
 			== 0)
 		{
 			if (card->front) {
-				result = print_var_to(var_start, &buf_len,
+				result = print_var_to(var_start, buf_len,
 					buf_cap, front_var,
 					"<img src=\"%s\" width=\"400\" height=\"400\">\n",
 					cards[card->card_id].file_name);
 			} else {
-				result = print_var_to(var_start, &buf_len,
+				result = print_var_to(var_start, buf_len,
 					buf_cap, front_var, "<p>%s</p>\n",
 					cards[card->card_id].file_name);
 			}
@@ -628,12 +629,12 @@ int replace_in_buf(char *buf, size_t buf_len, const size_t buf_cap)
 			== 0)
 		{
 			if (!card->front) {
-				result = print_var_to(var_start, &buf_len,
+				result = print_var_to(var_start, buf_len,
 					buf_cap, back_var,
 					"<img src=\"%s\" width=\"400\" height=\"400\">\n",
 					cards[card->card_id].file_name);
 			} else {
-				result = print_var_to(var_start, &buf_len,
+				result = print_var_to(var_start, buf_len,
 					buf_cap, back_var, "<p>%s</p>\n",
 					cards[card->card_id].file_name);
 			}
@@ -656,7 +657,7 @@ int asl_get(struct request *r, int client)
 		fprintf(stderr, "Failed to load %s.\n", asl_file);
 		return send_404(client);
 	}
-	if (replace_in_buf(file_buf, file_len, LEN(file_buf))) {
+	if (replace_in_buf(file_buf, &file_len, LEN(file_buf))) {
 		fprintf(stderr, "Failed to replace variables in file.\n");
 		return send_404(client);
 	}
@@ -729,7 +730,7 @@ int find_param(struct param out[static 1], struct request r[static 1],
 
 	if (!param_name)
 		return EINVAL;
-	char *param = strnstr(r->parameters, param_name, r->param_len);
+	char *param = strstr(r->parameters, param_name);
 	if (!param) {
 		printf("Did not find %s in parameters.\n", param_name);
 		return EINVAL;
