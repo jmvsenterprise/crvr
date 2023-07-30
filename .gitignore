@@ -13,3 +13,4 @@ config.mk
 *.o
 *.jpeg
 *.png
+server.tar.xz
