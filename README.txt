@@ -9,13 +9,23 @@ spaced repetition learning. Yes, I could use various apps to do this for me but
 I'm curious about how all this works so I wanted to have a go at creating a
 webserver from scratch.
 
+I tried to vaguely follow NASA coding standards here, although I definitly
+switched to just-make-it-go mode several times. But I'd like to get it back to
+the rules of 10 at some point.
+
 For now this serves very specific files, but once I've got it working for my
 use case I have a few ideas for possible expansion which I may, or may not,
 persue. Details follow.
 
+BUILDING
+--------
+I need to fix it so the windows build works. But for linux or mac, copy or
+symlink unix.mk to config.mk so the makefile will find config.mk, then run
+make.
+
 TODO
 ----
-Simplest viable product:
+Minimum viable product:
 
 [x] The server scans its starting directory for all image files.
 [x] It then creates an association of the card with the front or back of the card.
@@ -37,10 +47,13 @@ Simplest viable product:
 
 FUTURE ENHANCEMENTS
 -------------------
-Creating quiz files and remembering card state long-term
-Splitting out the ASL stuff into its own project the server loads via .so.
-Uploading images to the server via an upload page
-HTTPS
+* Test clang-tidy
+* Get it building with windows nmake. Probably just dedicate windows.mk to
+  building for windows and don't bother linking it in to the main makefile.
+* Creating quiz files and remembering card state long-term
+* Splitting out the ASL stuff into its own project the server loads via .so.
+* Uploading images to the server via an upload page
+* Someday - HTTPS, because I'd like to learn how that magic works.
 
 THE PLAN
 --------
