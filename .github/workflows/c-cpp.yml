@@ -13,5 +13,7 @@ jobs:
 
     steps:
     - uses: actions/checkout@v3
+    - name: config
+      run: ln -s unix.mk config.mk
     - name: make
       run: make
