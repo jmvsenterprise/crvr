@@ -5,7 +5,7 @@ include config.mk
 OUT=server$(OUTEXT)
 OBJS=server.$(OBJ) pool.$(OBJ)
 
-all: server pkg analyze
+all: server
 
 pkg: server.tar.xz
 
