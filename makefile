@@ -2,12 +2,12 @@
 # config.mk or symlink it.
 include config.mk
 
-OUT=server$(OUTEXT)
-OBJS=server.$(OBJ) pool.$(OBJ)
+OUT=crvr$(OUTEXT)
+OBJS=crvr.$(OBJ) pool.$(OBJ) asl.$(OBJ)
 
-all: server
+all: crvr
 
-pkg: server.tar.xz
+pkg: crvr.tar.xz
 
 server.tar.xz: server asl.html asl_done.html
 	tar -cf server.tar server asl.html asl_done.html
@@ -16,12 +16,12 @@ server.tar.xz: server asl.html asl_done.html
 $(OUT): $(OBJS)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
-analyze: server.c
-	clang-tidy server.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*
+analyze: crvr.c asl.c
+	clang-tidy crvr.c asl.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*
 
 clean:
 	$(RM) $(OUT)
 	$(RM) *.$(OBJ)
-	$(RM) server.tar.xz
+	$(RM) crvr.tar.xz
 	
 .PHONY: all clean
