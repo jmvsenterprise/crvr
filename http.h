@@ -3,6 +3,9 @@
  *
  * This file contains structures for HTTP requests.
  */
+#ifndef HTTP_H
+#define HTTP_H
+
 enum request_type {
 	GET,
 	POST
@@ -31,6 +34,8 @@ struct param {
 	char value[PARAM_VALUE_MAX];
 };
 
+const char *ok_header;
+
 /*
  * Sends the 404 error code to the client.
  *
@@ -41,3 +46,5 @@ struct param {
  * Returns 0 if the message was sent. Otherwise an error code is returned.
  */
 int send_404(int client);
+
+#endif // HTTP_H

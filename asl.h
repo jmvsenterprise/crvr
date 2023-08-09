@@ -9,6 +9,8 @@
 
 #include "http.h"
 
+#include <time.h>
+
 struct card {
 	char file_name[FILENAME_MAX];
 };

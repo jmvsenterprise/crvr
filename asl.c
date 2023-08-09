@@ -11,10 +11,12 @@
 #include <stddef.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdlib.h>
 #include <sys/stat.h>
 #include <sys/types.h>
-#include <time.h>
 #include <unistd.h>
+
+#include "utils.h"
 
 // Indicates if a user's confidence level has been tested or not
 #define NOT_TESTED -1
