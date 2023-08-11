@@ -6,6 +6,9 @@
 #ifndef HTTP_H
 #define HTTP_H
 
+#include <stdint.h>
+#include <stdio.h>
+
 enum request_type {
 	GET,
 	POST
@@ -35,6 +38,9 @@ struct param {
 };
 
 const char *ok_header;
+
+int find_param(struct param out[static 1], struct request r[static 1],
+	const char *param_name);
 
 /*
  * Sends the 404 error code to the client.

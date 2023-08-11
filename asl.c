@@ -9,7 +9,6 @@
 #include <errno.h>
 #include <dirent.h>
 #include <stddef.h>
-#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 #include <sys/stat.h>
@@ -29,7 +28,7 @@ static size_t current_quiz_item = 0;
 const char asl_file[] = "asl.html";
 
 int find_image_files(void);
-
+int is_image(const char *file);
 int show_done_page(int client);
 /*
  * Load the file in and replace variables in it. Then send the file to the
@@ -193,6 +192,42 @@ int find_image_files(void)
 		LEN(cards), quiz_len, LEN(quiz));
 	return result;
 }
+
+int is_image(const char *file)
+{
+	char *file_types[] = {
+		".png",
+		".jpg",
+		".jpeg",
+	};
+	int match;
+	/*
+	 * Loop through every character in the file type looking for the first
+	 * character that doesn't match. If everything matched, return nonzero.
+	 */
+	const size_t name_len = strlen(file);
+
+	for (size_t type = 0; type < LEN(file_types); ++type) {
+		const size_t type_len = strlen(file_types[type]);
+		if (name_len < type_len) {
+			// Not a match.
+			continue;
+		}
+		match = 1;
+		const size_t ext_start = name_len - type_len;
+		for (size_t i = 0; (i <= type_len) && (match); ++i) {
+			if (file[ext_start + i] != file_types[type][i]) {
+				match = 0;
+			}
+		}
+		if (match) {
+			printf("%s matched %s.\n", file, file_types[type]);
+			return 1;
+		}
+	}
+	return 0;
+}
+
 
 /*
  * Replace the variables found in buf with their values.

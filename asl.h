@@ -9,6 +9,7 @@
 
 #include "http.h"
 
+#include <stdio.h>
 #include <time.h>
 
 struct card {
