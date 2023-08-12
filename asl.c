@@ -38,7 +38,16 @@ int show_done_page(int client);
  * It returns 0 on success or an errno on failure.
  */
 int send_file_with_replaced_params(FILE *f, int client);
+
+/*
+ * Shuffle the global deck of cards.
+ */
 void shuffle_cards(void);
+
+/*
+ * Replace the variables found in buf with their values.
+ */
+int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap);
 
 int asl_init(void)
 {

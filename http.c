@@ -5,7 +5,13 @@
  */
 #include "http.h"
 
-const char ok_header[] = "HTTP/1.1 200 OK";
+#include <errno.h>
+#include <string.h>
+#include <unistd.h>
+
+#include "utils.h"
+
+const char *ok_header = "HTTP/1.1 200 OK";
 
 int find_param(struct param out[static 1], struct request r[static 1],
 	const char *param_name)
@@ -56,6 +62,98 @@ int find_param(struct param out[static 1], struct request r[static 1],
 	printf("param %s:%s.\n", out->name, out->value);
 
 	return 0;
+}
+
+int send_data(int client, const char *header, const char *contents,
+	size_t content_len)
+{
+	static char buffer[MEGABYTE];
+	int bytes;
+
+	memset(buffer, 0, LEN(buffer));
+
+	bytes = snprintf(buffer, STRMAX(buffer),
+		"%s\r\nContent Length: %lu\r\n\r\n", header, content_len);
+	if (bytes < 0) {
+		fprintf(stderr, "Buf write failure. %d.\n", errno);
+		return errno;
+	}
+
+	// Send header
+	ssize_t bytes_sent = write(client, buffer, (size_t)bytes);
+	if (bytes_sent == -1) {
+		fprintf(stderr, "Failed to write buffer to client! %d\n",
+			errno);
+		return -1;
+	}
+	if (bytes_sent != bytes) {
+		fprintf(stderr, "Only sent %ld of %d of header\n", bytes_sent,
+			bytes);
+		return -1;
+	}
+	printf("Sent %ld byte header and ", bytes_sent);
+
+	// Send contents
+	bytes_sent = write(client, contents, content_len);
+	if (bytes_sent == -1) {
+		perror("Failed to write buffer to client.");
+		return errno;
+	}
+	if ((size_t)bytes_sent != content_len) {
+		fprintf(stderr, "Only sent %ld of %ld of the content.\n",
+			bytes_sent, content_len);
+		return -1;
+	}
+	printf("%ld byte content.\n", bytes_sent);
+	return 0;
+}
+
+int send_file(FILE *f, int client, struct pool *p)
+{
+	char *contents;
+	long file_size;
+	size_t chars_read;
+	int result = 0;
+
+	(void)p;
+
+	if (fseek(f, 0, SEEK_END) != 0) {
+		perror("Failed to seek to the end of the file.\n");
+		return -1;
+	}
+	file_size = ftell(f);
+	if (file_size < 0) {
+		perror("Failed to read the file size of the file.\n");
+		return -1;
+	}
+	if (fseek(f, 0, SEEK_SET) != 0) {
+		perror("Failed to seek to beginning of the file.\n");
+		return -1;
+	}
+	printf("File is %lu bytes.\n", file_size);
+	contents = calloc((size_t)file_size, sizeof(*contents));
+	if (!contents) {
+		fprintf(stderr, "Failed to allocate buffer for file: %d.\n",
+			errno);
+		return errno;
+	} else {
+		chars_read = fread((void*)contents, sizeof(*contents),
+			(size_t)file_size, f);
+		if (chars_read != (size_t)file_size) {
+			printf("Failed to read in file: %lu of %ld\n",
+				chars_read, file_size);
+			result = errno;
+		}
+
+		result = send_data(client, ok_header, contents,
+			(size_t)file_size);
+		if (result < 0) {
+			fprintf(stderr, "Failed to send message.\n");
+			result = errno;
+		}
+		free(contents);
+	}
+	return result;
 }
 
 int send_404(int client)

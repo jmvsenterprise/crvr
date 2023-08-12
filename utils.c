@@ -5,6 +5,35 @@
  */
 #include "utils.h"
 
+int load_file(const char *file_name, char *buffer, const size_t buf_len,
+	size_t *bytes_loaded)
+{
+	assert(bytes_loaded && file_name && buffer && buf_len > 0);
+
+	int result = 0;
+	size_t bytes_read;
+	FILE *f;
+
+	f = fopen(file_name, "r");
+	if (!f) {
+		fprintf(stderr, "Failed to open %s: %d\n", file_name, errno);
+		return errno;
+	}
+	*bytes_loaded = 0;
+	while (!feof(f) && !ferror(f)) {
+		bytes_read = fread(buffer + *bytes_loaded, sizeof(*buffer),
+			buf_len - *bytes_loaded, f);
+		*bytes_loaded += bytes_read;
+	}
+	if (ferror(f)) {
+		result = errno;
+		fprintf(stderr, "Error reading %s: %d.\n", file_name, result);
+	}
+	fclose(f);
+	return result;
+}
+
+
 /*
  * Print the value of a variable to the buffer.
  *

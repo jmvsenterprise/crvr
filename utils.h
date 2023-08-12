@@ -20,6 +20,20 @@
 #define STRMAX(p) (LEN(p) - 1)
 
 /*
+ * Load the contents of a file into a buffer.
+ *
+ * file_name - The path to the file to load.
+ * buffer - The location to store the file contents.
+ * buf_len - The maximum length of the buffer.
+ * bytes_loaded - This will be set to how many bytes of the file were read
+ *                into the buffer.
+ *
+ * Returns zero on success and an error code on failure.
+ */
+int load_file(const char *file_name, char *buffer, const size_t buf_len,
+	size_t *bytes_loaded);
+
+/*
  * Print the value of a variable to the buffer.
  *
  * buf - The buffer to replace the variable in.

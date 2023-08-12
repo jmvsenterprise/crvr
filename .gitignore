@@ -14,3 +14,4 @@ config.mk
 *.jpeg
 *.png
 server.tar.xz
+.DS_Store
