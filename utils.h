@@ -7,6 +7,8 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#include <stddef.h>
+
 #define KILOBYTE (1000)
 #define KIBIBYTE (1024)
 #define MEGABYTE (1000000)

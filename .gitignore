@@ -15,3 +15,4 @@ config.mk
 *.png
 server.tar.xz
 .DS_Store
+crvr
