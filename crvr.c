@@ -442,7 +442,12 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 
 	char buffer[8192] = {0};
 	memset(buffer, 0, sizeof(buffer));
-	size_t bytes_rxed = (size_t)recv(client, buffer, LEN(buffer) - 1, 0);
+	ssize_t recv_result = -1;
+	do {
+		recv_result = recv(client, buffer, LEN(buffer) - 1, 0);
+	} while ((recv_result == -1) && (errno == EAGAIN));
+	
+	size_t bytes_rxed = (size_t)recv_result;
 	if (bytes_rxed == (size_t)-1) {
 		fprintf(stderr, "Failed to read from client: %d.\n",
 			get_error());
@@ -456,7 +461,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 			buffer);
 		return -1;
 	}
-	int result;
+	int result = 0;
 	if (request.type == GET) {
 		result = handle_get_request(client, &request, p);
 	} else {
