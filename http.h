@@ -39,7 +39,7 @@ struct param {
 	char value[PARAM_VALUE_MAX];
 };
 
-const char *ok_header;
+extern const char ok_header[];
 
 /*
  * Searches for a parameter in the http request.

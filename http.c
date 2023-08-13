@@ -11,7 +11,7 @@
 
 #include "utils.h"
 
-const char *ok_header = "HTTP/1.1 200 OK";
+const char ok_header[] = "HTTP/1.1 200 OK";
 
 int find_param(struct param out[static 1], struct request r[static 1],
 	const char *param_name)
