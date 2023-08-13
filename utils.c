@@ -6,12 +6,16 @@
 #include "utils.h"
 
 #include <assert.h>
+#include <ctype.h>
 #include <errno.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+
+// The number of bytes to show on a line in print_blob.
+#define BLOB_LINE (16)
 
 int load_file(const char *file_name, char *buffer, const size_t buf_len,
 	size_t *bytes_loaded)
@@ -39,6 +43,58 @@ int load_file(const char *file_name, char *buffer, const size_t buf_len,
 	}
 	fclose(f);
 	return result;
+}
+
+/*
+ * Print blob which is len bytes long. If max_lines is -1, print the entire blob.
+ * If max_lines is > 0, print at most that many lines of blob. A "line" contains
+ * BLOB_LINE bytes of hex data and character data.
+ */
+void print_blob(const char *blob, const size_t len, int max_lines)
+{
+	size_t count = 0;
+	unsigned line_offset = 0;
+	char line[BLOB_LINE];
+	for (size_t i = 0; i < len; ++i) {
+		line[count++] = blob[i];
+		if (count == LEN(line)) {
+			if (max_lines != -1) {
+				if (max_lines == 0)
+					return;
+				else
+					max_lines--;
+			}
+			printf("0x%08x: ", line_offset);
+			for (size_t c = 0; c < LEN(line); ++c) {
+				printf("%2.2hhx ", line[c]);
+			}
+			for (size_t c = 0; c < LEN(line); ++c) {
+				if (isalnum(line[c]) || ispunct(line[c])) {
+					printf("%c", line[c]);
+				} else {
+					printf(".");
+				}
+			}
+			printf("\n");
+			line_offset += LEN(line);
+			count = 0;
+
+		}
+	}
+	if (count > 0) {
+		printf("0x%08x: ", line_offset);
+		for (size_t c = 0; c < count; ++c) {
+			printf("%2.2hhx ", line[c]);
+		}
+		for (size_t c = 0; c < count; ++c) {
+			if (isalnum(line[c]) || ispunct(line[c])) {
+				printf("%c", line[c]);
+			} else {
+				printf(".");
+			}
+		}
+	}
+	printf("\n");
 }
 
 

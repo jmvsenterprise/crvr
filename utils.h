@@ -36,6 +36,13 @@ int load_file(const char *file_name, char *buffer, const size_t buf_len,
 	size_t *bytes_loaded);
 
 /*
+ * Print blob which is len bytes long. If max_lines is -1, print the entire blob.
+ * If max_lines is > 0, print at most that many lines of blob. A "line" contains
+ * BLOB_LINE bytes of hex data and character data.
+ */
+void print_blob(const char *blob, const size_t len, int max_lines);
+
+/*
  * Print the value of a variable to the buffer.
  *
  * buf - The buffer to replace the variable in.

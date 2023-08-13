@@ -67,6 +67,15 @@ extern const char ok_header[];
 int find_param(struct param out[static 1], struct request r[static 1],
 	const char *param_name);
 
+char *header_find_value(struct request *r, const char *key);
+
+/*
+ * Prints a HTTP request for debugging.
+ *
+ * r - The request to print.
+ */
+void print_request(struct request *r);
+
 /*
  * Sends a blob of data to the client with the specified header.
  *

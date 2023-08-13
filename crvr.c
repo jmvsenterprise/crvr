@@ -1,5 +1,10 @@
+/*
+ * Copyright (C) 2023 Joseph M Vrba
+ *
+ * This file contains the main routine and helper routines for the crvr
+ * c[e]rv[e]r program.
+ */
 #include <assert.h>
-#include <ctype.h>
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
@@ -17,11 +22,12 @@
 #include "pool.h"
 #include "utils.h"
 
+// Define system specific functions to initialize the socket stuff.
 #if WINDOWS
 #include <winsock2.h>
 #pragma message("Building for windows")
 
-int init_socket_layer(void)
+static int init_socket_layer(void)
 {
 	// Startup winsock.
 	struct WSAData wsa_data = {0};
@@ -33,12 +39,12 @@ int init_socket_layer(void)
 	return 0;
 }
 
-void cleanup_socket_layer(void)
+static void cleanup_socket_layer(void)
 {
 	WSACleanup();
 }
 
-int get_error(void)
+static int get_error(void)
 {
 	WSAGetLastError();
 }
@@ -50,16 +56,16 @@ int get_error(void)
 #include <sys/types.h>
 #include <unistd.h>
 
-int init_socket_layer(void)
+static int init_socket_layer(void)
 {
   return 0;
 }
 
-void cleanup_socket_layer(void)
+static void cleanup_socket_layer(void)
 {
 }
 
-int get_error(void)
+static int get_error(void)
 {
 	return errno;
 }
@@ -68,112 +74,22 @@ int get_error(void)
 #error "No build type selected"
 #endif
 
+// Default port for the webserver
 static const unsigned short port = 8080;
 
+/*
+ * Prints the address in a sockaddr_in.
+ */
 void print(struct sockaddr_in *address)
 {
 	const unsigned ip = ntohl(address->sin_addr.s_addr);
-	const unsigned byte4 = ip & 0xff000000;
-	const unsigned byte3 = ip & 0x00ff0000;
-	const unsigned byte2 = ip & 0x0000ff00;
-	const unsigned byte1 = ip & 0x000000ff;
+	const unsigned char byte4 = (ip & 0xff000000) >> 24;
+	const unsigned char byte3 = (ip & 0x00ff0000) >> 16;
+	const unsigned char byte2 = (ip & 0x0000ff00) >> 8;
+	const unsigned char byte1 = ip & 0x000000ff;
 	const unsigned short port = ntohs(address->sin_port);
-	printf("Contact: %u.%u.%u.%u:%u\n", byte4, byte3, byte2, byte1, port);
-}
-
-/*
- * Print blob which is len bytes long. If max_lines is -1, print the entire blob.
- * If max_lines is > 0, print at most that many lines of blob. A "line" contains
- * BLOB_LINE bytes of hex data and character data.
- */
-#define BLOB_LINE (16)
-void print_blob(const char *blob, const size_t len, int max_lines)
-{
-	size_t count = 0;
-	unsigned line_offset = 0;
-	char line[BLOB_LINE];
-	for (size_t i = 0; i < len; ++i) {
-		line[count++] = blob[i];
-		if (count == LEN(line)) {
-			if (max_lines != -1) {
-				if (max_lines == 0)
-					return;
-				else
-					max_lines--;
-			}
-			printf("0x%08x: ", line_offset);
-			for (size_t c = 0; c < LEN(line); ++c) {
-				printf("%2.2hhx ", line[c]);
-			}
-			for (size_t c = 0; c < LEN(line); ++c) {
-				if (isalnum(line[c]) || ispunct(line[c])) {
-					printf("%c", line[c]);
-				} else {
-					printf(".");
-				}
-			}
-			printf("\n");
-			line_offset += LEN(line);
-			count = 0;
-
-		}
-	}
-	if (count > 0) {
-		printf("0x%08x: ", line_offset);
-		for (size_t c = 0; c < count; ++c) {
-			printf("%2.2hhx ", line[c]);
-		}
-		for (size_t c = 0; c < count; ++c) {
-			if (isalnum(line[c]) || ispunct(line[c])) {
-				printf("%c", line[c]);
-			} else {
-				printf(".");
-			}
-		}
-	}
-	printf("\n");
-}
-
-void
-print_request(struct request *r)
-{
-	const char *type_str = NULL;
-	size_t i;
-
-	if (r->type == GET) {
-		type_str = "GET";
-	} else if (r->type == POST) {
-		type_str = "POST";
-	} else {
-		type_str = "UNKNOWN";
-	}
-	printf("Request:\n"
-		"Type: %s\n"
-		"Path: %s\n"
-		"Format: %s\n"
-		"Headers:\n",
-		type_str, r->path, r->format);
-	for (i = 0; i < r->header_count; ++i) {
-		printf("\t%s: %s\n", r->headers[i].key, r->headers[i].value);
-	}
-	if (r->parameters) {
-		printf("Parameters:\n"
-		       "-----------\n");
-		print_blob(r->parameters, r->param_len, 20);	
-		printf("-----------\n");
-	}
-}
-
-char *
-header_find_value(struct request *r, const char *key)
-{
-	size_t i;
-	for (i = 0; i < r->header_count; ++i) {
-		if (strcmp(key, r->headers[i].key) == 0) {
-			return r->headers[i].value;
-		}
-	}
-	return NULL;
+	printf("Contact: %hhu.%hhu.%hhu.%hhu:%hu\n", byte4, byte3, byte2, byte1,
+		port);
 }
 
 int parse_request_buffer(struct request *request)

@@ -64,6 +64,46 @@ int find_param(struct param out[static 1], struct request r[static 1],
 	return 0;
 }
 
+char *header_find_value(struct request *r, const char *key)
+{
+	size_t i;
+	for (i = 0; i < r->header_count; ++i) {
+		if (strcmp(key, r->headers[i].key) == 0) {
+			return r->headers[i].value;
+		}
+	}
+	return NULL;
+}
+
+void print_request(struct request *r)
+{
+	const char *type_str = NULL;
+	size_t i;
+
+	if (r->type == GET) {
+		type_str = "GET";
+	} else if (r->type == POST) {
+		type_str = "POST";
+	} else {
+		type_str = "UNKNOWN";
+	}
+	printf("Request:\n"
+		"Type: %s\n"
+		"Path: %s\n"
+		"Format: %s\n"
+		"Headers:\n",
+		type_str, r->path, r->format);
+	for (i = 0; i < r->header_count; ++i) {
+		printf("\t%s: %s\n", r->headers[i].key, r->headers[i].value);
+	}
+	if (r->parameters) {
+		printf("Parameters:\n"
+		       "-----------\n");
+		print_blob(r->parameters, r->param_len, 20);	
+		printf("-----------\n");
+	}
+}
+
 int send_data(int client, const char *header, const char *contents,
 	size_t content_len)
 {
