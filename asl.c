@@ -25,11 +25,42 @@ static struct card cards[100];
 static size_t quiz_len = 0;
 static struct quiz_item quiz[LEN(cards) * 2];
 static size_t current_quiz_item = 0;
-const char asl_file[] = "asl.html";
+static const char asl_file[] = "asl.html";
 
-int find_image_files(void);
-int is_image(const char *file);
-int show_done_page(int client);
+/*
+ * Scan the current directory looking for image files.
+ *
+ * The image files will be used to build up the cards and quiz_items.
+ *
+ * Returns 0 if the images were loaded successfully. Otherwise returns an
+ * error.
+ */
+static int find_image_files(void);
+
+/*
+ * Checks the extension on the file to see if it is an image.
+ *
+ * Hmmm... maybe in the future check the file type on unix too?
+ *
+ * file - The file path to check.
+ *
+ * Returns nonzero if the file is a supported image type. Otherwise returns
+ * an error code.
+ */
+static int is_image(const char *file);
+
+/*
+ * Sends the done page to the client.
+ *
+ * The done page is the page shown when all ASL cards have been practiced.
+ *
+ * client - The client to send the page to.
+ *
+ * Returns 0 if the page was successfully sent to the client. Otherwise an
+ * error code is returned.
+ */
+static int show_done_page(int client);
+
 /*
  * Load the file in and replace variables in it. Then send the file to the
  * client. This routine only supports reading in a 4k file. And it allocates
@@ -37,18 +68,37 @@ int show_done_page(int client);
  *
  * It returns 0 on success or an errno on failure.
  */
-int send_file_with_replaced_params(FILE *f, int client);
+static int send_file_with_replaced_params(FILE *f, int client);
 
 /*
  * Shuffle the global deck of cards.
  */
-void shuffle_cards(void);
+static void shuffle_cards(void);
 
 /*
  * Replace the variables found in buf with their values.
+ *
+ * This function replaces application-specific parameters in the buffer.
+ * The HTML file is loaded into the buffer and contains $variables. These
+ * $variables will be replaced by their values in the application's memory
+ * and, possibly, additional text.
+ *
+ * So the buffer should be large enough to store all of the application data
+ * and text. That is why this function requests a buf_len and a buf_cap. The
+ * buf_len is how big the HTML is before substituting the variables (how far
+ * this function should scan to replace variables) and the buf_cap is the
+ * maximum amount of data the buffer can hold.
+ *
+ * buf - The buffer to replace variables in.
+ * buf_len - The length of the data in the buffer.
+ * buf_cap - The maxium amount of data that can be stored in the buffer.
  */
-int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap);
+static int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap);
 
+/*
+ * Find all image files that we support, shuffle them and wait for the client
+ * to connect.
+ */
 int asl_init(void)
 {
 	if (find_image_files() != 0) {
@@ -59,6 +109,10 @@ int asl_init(void)
 	return 0;
 }
 
+/*
+ * Load the ASL file, replace all the variables with their current values and
+ * send data to the client.
+ */
 int asl_get(struct request *r, int client)
 {
 	(void)r;
@@ -76,6 +130,11 @@ int asl_get(struct request *r, int client)
 	return send_data(client, ok_header, file_buf, file_len);
 }
 
+/*
+ * Investigate the request to see which button they pressed. Then update their
+ * card stats. Finally, see if the quiz is complete and, if so, send the done
+ * page. Otherwise send the asl page again.
+ */
 int asl_post(struct request *r, int client)
 {
 	(void)client;
@@ -126,12 +185,11 @@ int asl_post(struct request *r, int client)
 	return 0;
 }
 
-
 /*
  * Create a new card entry, then create two quiz items in the quiz for the card.
  * One for the front of the card and one for the back of the card.
  */
-int found_image(char *image)
+static int found_image(char *image)
 {
 	if (card_count >= LEN(cards)) {
 		fprintf(stderr, "Out of cards: %lu/%lu\n", card_count,
@@ -163,7 +221,12 @@ int found_image(char *image)
 	return 0;
 }
 
-int find_image_files(void)
+/*
+ * Scan all files in the current directory. Filter out directories and non
+ * regular files. Then check if it is an image. If it is, add it to the
+ * quiz.
+ */
+static int find_image_files(void)
 {
 	DIR *cwd;
 	struct dirent *entry;
@@ -202,7 +265,11 @@ int find_image_files(void)
 	return result;
 }
 
-int is_image(const char *file)
+/*
+ * Look for certain extensions in the file name to figure out if it is an
+ * image.
+ */
+static int is_image(const char *file)
 {
 	char *file_types[] = {
 		".png",
@@ -241,7 +308,7 @@ int is_image(const char *file)
 /*
  * Replace the variables found in buf with their values.
  */
-int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap)
+static int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap)
 {
 	size_t dst = 0;
 	int result = 0;
@@ -300,7 +367,10 @@ int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap)
 	return result;
 }
 
-int show_done_page(int client)
+/*
+ * Load the done page, replace any variables, and send it off.
+ */
+static int show_done_page(int client)
 {
 	FILE *f = fopen("asl_done.html", "r");
 	if (!f) {
@@ -310,7 +380,11 @@ int show_done_page(int client)
 	return send_file_with_replaced_params(f, client);
 }
 
-int send_file_with_replaced_params(FILE *f, int client)
+/*
+ * Load a file and replace any variables in it. Then send it to the
+ * client.
+ */
+static int send_file_with_replaced_params(FILE *f, int client)
 {
 	/* Allocate 4KiB for the file and 2KiB for augmentation by parameter
 	 * data. */
@@ -329,7 +403,11 @@ int send_file_with_replaced_params(FILE *f, int client)
 	return send_data(client, ok_header, buf, buf_used);
 }
 
-void shuffle_cards(void)
+/*
+ * This routine just does a basic random swap. I didn't think very hard
+ * about this.
+ */
+static void shuffle_cards(void)
 {
 	for (size_t i = 0; i < quiz_len; ++i) {
 		size_t new_pos = ((size_t)rand()) % quiz_len;

@@ -9,9 +9,9 @@ all: crvr
 
 pkg: crvr.tar.xz
 
-server.tar.xz: server asl.html asl_done.html
-	tar -cf server.tar server asl.html asl_done.html
-	xz server.tar
+crvr.tar.xz: crvr asl.html asl_done.html
+	tar -cf crvr.tar crvr asl.html asl_done.html
+	xz crvr.tar
 
 $(OUT): $(OBJS)
 	$(CC) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
