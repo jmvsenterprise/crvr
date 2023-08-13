@@ -11,11 +11,22 @@
 
 #include "pool.h"
 
+// The max length of an HTTP parameter.
+#define PARAM_NAME_MAX 256
+// The max value of an HTTP parameter.
+#define PARAM_VALUE_MAX 1024
+
+/*
+ * The supported HTTP request types.
+ */
 enum request_type {
 	GET,
 	POST
 };
 
+/*
+ * An HTTP request.
+ */
 struct request {
 	enum request_type type;
 	char path[FILENAME_MAX];
@@ -31,14 +42,17 @@ struct request {
 	char *parameters;
 };
 
-#define PARAM_NAME_MAX 256
-#define PARAM_VALUE_MAX 1024
-
+/*
+ * An extracted HTTP parameter.
+ */
 struct param {
 	char name[PARAM_NAME_MAX];
 	char value[PARAM_VALUE_MAX];
 };
 
+/*
+ * The header for the HTTP 200 OK response.
+ */
 extern const char ok_header[];
 
 /*

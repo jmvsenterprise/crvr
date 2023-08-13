@@ -12,10 +12,20 @@
 #include <stdio.h>
 #include <time.h>
 
+/*
+ * The card represents an object with a front and back. Right now it only
+ * supports that one side is an image and the other side is the text of
+ * that image.
+ */
 struct card {
 	char file_name[FILENAME_MAX];
 };
 
+/*
+ * The quiz_item is an entry in the quiz, which corresponds to a card and
+ * whether the front or back of the card is shown first. Users are quizzed
+ * on both sides of the card, so there are two quiz_items per card.
+ */
 struct quiz_item {
 	size_t card_id;
 	int front;
