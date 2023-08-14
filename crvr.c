@@ -83,10 +83,10 @@ static const unsigned short port = 8080;
 void print(struct sockaddr_in *address)
 {
 	const unsigned ip = ntohl(address->sin_addr.s_addr);
-	const unsigned char byte4 = (ip & 0xff000000) >> 24;
-	const unsigned char byte3 = (ip & 0x00ff0000) >> 16;
-	const unsigned char byte2 = (ip & 0x0000ff00) >> 8;
-	const unsigned char byte1 = ip & 0x000000ff;
+	const unsigned char byte4 = (unsigned char)((ip & 0xff000000) >> 24);
+	const unsigned char byte3 = (unsigned char)((ip & 0x00ff0000) >> 16);
+	const unsigned char byte2 = (unsigned char)((ip & 0x0000ff00) >> 8);
+	const unsigned char byte1 = (unsigned char)(ip & 0x000000ff);
 	const unsigned short port = ntohs(address->sin_port);
 	printf("Contact: %hhu.%hhu.%hhu.%hhu:%hu\n", byte4, byte3, byte2, byte1,
 		port);
