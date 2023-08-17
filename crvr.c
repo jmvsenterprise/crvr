@@ -20,59 +20,8 @@
 
 #include "asl.h"
 #include "pool.h"
+#include "socket_layer.h"
 #include "utils.h"
-
-// Define system specific functions to initialize the socket stuff.
-#if WINDOWS
-#include <winsock2.h>
-#pragma message("Building for windows")
-
-static int init_socket_layer(void)
-{
-	// Startup winsock.
-	struct WSAData wsa_data = {0};
-	int result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
-	if (result != 0) {
-		printf("WSA Startup failed: %d.\n", result);
-		return -1;
-	}
-	return 0;
-}
-
-static void cleanup_socket_layer(void)
-{
-	WSACleanup();
-}
-
-static int get_error(void)
-{
-	WSAGetLastError();
-}
-
-#elif UNIX
-#pragma message("Building for MAC")
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-static int init_socket_layer(void)
-{
-  return 0;
-}
-
-static void cleanup_socket_layer(void)
-{
-}
-
-static int get_error(void)
-{
-	return errno;
-}
-
-#else
-#error "No build type selected"
-#endif
 
 // Default port for the webserver
 static const unsigned short port = 8080;

@@ -3,7 +3,7 @@
 include config.mk
 
 OUT=crvr$(OUTEXT)
-OBJS=crvr.$(OBJ) pool.$(OBJ) asl.$(OBJ) http.$(OBJ) utils.$(OBJ)
+OBJS=crvr.$(OBJ) pool.$(OBJ) asl.$(OBJ) http.$(OBJ) utils.$(OBJ) socket_layer.$(OBJ)
 
 all: crvr
 
