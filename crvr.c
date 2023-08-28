@@ -41,6 +41,10 @@ void print(struct sockaddr_in *address)
 		port);
 }
 
+/*
+ * Parse the buffer in the request. Determine if it is a POST or GET request
+ * and parse its parameters storing the data in the request itself.
+ */
 int parse_request_buffer(struct request *request)
 {
 	const char eol[] = "\r\n";
