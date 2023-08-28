@@ -29,28 +29,7 @@ static int get_error(void)
 }
 
 #elif UNIX
-
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-
-static int init_socket_layer(void)
-{
-	// Nothing to do
-	return 0;
-}
-
-static void cleanup_socket_layer(void)
-{
-	// Nothing to do
-}
-
-static int get_error(void)
-{
-	// Nothing to do
-}
-
+// Nothing
 #else
 
 #error ("No build type specified")

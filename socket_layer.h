@@ -8,19 +8,29 @@
 #ifndef SOCKET_LAYER_H
 #define SOCKET_LAYER_H
 
+#if WINDOWS
+#include <winsock2.h>
+#elif UNIX
+#include <errno.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
+#endif
+
 /*
  * Initialize the socket layer for windows.
  */
-static int init_socket_layer(void);
+int init_socket_layer(void) { return 0; }
 
 /*
  * Cleanup the socket layer.
  */
-static void cleanup_socket_layer(void);
+void cleanup_socket_layer(void) {}
 
 /*
  * Retrieve the error from the socket layer.
  */
-static int get_error(void);
+int get_error(void) { return errno; }
 
 #endif // SOCKET_LAYER_H
