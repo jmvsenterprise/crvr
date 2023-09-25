@@ -5,7 +5,7 @@ include config.mk
 OUT=crvr$(OUTEXT)
 OBJS=crvr.$(OBJ) pool.$(OBJ) asl.$(OBJ) http.$(OBJ) utils.$(OBJ) socket_layer.$(OBJ)
 
-all: crvr
+all: $(OUT)
 
 pkg: crvr.tar.xz
 
@@ -14,7 +14,7 @@ crvr.tar.xz: crvr asl.html asl_done.html
 	xz crvr.tar
 
 $(OUT): $(OBJS)
-	$(CC) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 analyze: crvr.c asl.c
 	clang-tidy crvr.c asl.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*

@@ -374,7 +374,7 @@ static int show_done_page(int client)
 {
 	FILE *f = fopen("asl_done.html", "r");
 	if (!f) {
-		perror("Failed to open file");
+		perror("Failed to open asl_done.html file");
 		return errno;
 	}
 	return send_file_with_replaced_params(f, client);

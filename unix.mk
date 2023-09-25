@@ -1,9 +1,16 @@
 OUTEXT=
 OBJ=o
+
+COMMON_FLAGS=-DUNIX=1 -Werror -Wextra -Wall -Wconversion
 #SANITIZERS=-fsanitize=address -fsanitize=undefined
-COMPILE_OPTS=-g -O0 -DUNIX=1 -Werror -Wextra -Wall -Wconversion $(SANITIZERS)
-CXXFLAGS=$(COMPILE_OPTS) -std=c++17
-CFLAGS=$(COMPILE_OPTS) -std=c17
+DEBUG_FLAGS=-g -O0 $(COMMON_FLAGS) $(SANITIZERS)
+RELEASE_FLAGS=-Os $(COMMON_FLAGS)
+
+BUILD=$(RELEASE_FLAGS)
+
+CXXFLAGS=$(BUILD) -std=c++17
+CFLAGS=$(BUILD) -std=c17
+
 LDFLAGS=$(SANITIZERS)
 LDLIBS=
 RM=rm -f
