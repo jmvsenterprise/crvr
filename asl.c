@@ -18,10 +18,12 @@
 #include "utils.h"
 
 // Indicates if a user's confidence level has been tested or not
-#define NOT_TESTED -1
+#define NOT_TESTED 1
 
 static size_t card_count = 0;
 static struct card cards[100];
+static size_t s_cards_remaining = 0;
+static time_t s_quiz_start = 0;
 static size_t quiz_len = 0;
 static struct quiz_item quiz[LEN(cards) * 2];
 static size_t current_quiz_item = 0;
@@ -101,6 +103,8 @@ static int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap);
  */
 int asl_init(void)
 {
+	s_quiz_start = time(NULL);
+
 	if (find_image_files() != 0) {
 		fprintf(stderr, "Failed to find image files.\n");
 		return -1;
@@ -163,17 +167,35 @@ int asl_post(struct request *r, int client)
 		// Boost the confidence by 1 and review this card that many
 		// days in the future.
 		card->confidence += 1;
-		card->next_review = time(NULL) + (SECONDS_PER_DAY *
+		card->next_review = s_quiz_start + (SECONDS_PER_DAY *
 			card->confidence);
 	} else if (strcmp(great_btn, button.value) == 0) {
 		// Double the confidence and review the card that many days in
 		// the future.
 		card->confidence *= 2;
-		card->next_review = time(NULL) + (SECONDS_PER_DAY *
+		card->next_review = s_quiz_start + (SECONDS_PER_DAY *
 			card->confidence);
 	} else {
 		printf("Unrecognized button value: \"%s\"\n", button.value);
 	}
+	printf("card confidence:%i review time:%lu\n", card->confidence,
+		card->next_review);
+
+	// Update cards remaining
+	s_cards_remaining = 0;
+	printf("quiz start time:%lu\n", s_quiz_start);
+	for (size_t i = 0; i < quiz_len; ++i) {
+		struct quiz_item *c = quiz + i;
+		printf("card %lu review time: %lu review:", i, c->next_review);
+		if (c->next_review <= s_quiz_start) {
+			printf("y\n");
+			s_cards_remaining++;
+		} else {
+			printf("n\n");
+		}
+	}
+	printf("cards remaining: %lu\n", s_cards_remaining);
+
 	current_quiz_item++;
 	if (current_quiz_item > quiz_len) {
 		// Show done page and show score!
@@ -207,12 +229,12 @@ static int found_image(char *image)
 	quiz[quiz_len].card_id = card_count;
 	quiz[quiz_len].front = 0;
 	quiz[quiz_len].confidence = NOT_TESTED;
-	quiz[quiz_len].next_review = time(NULL);
+	quiz[quiz_len].next_review = s_quiz_start;
 	quiz_len++;
 	quiz[quiz_len].card_id = card_count;
 	quiz[quiz_len].front = 1;
 	quiz[quiz_len].confidence = NOT_TESTED;
-	quiz[quiz_len].next_review = time(NULL);
+	quiz[quiz_len].next_review = s_quiz_start;
 	quiz_len++;
 	card_count++;
 
@@ -361,7 +383,7 @@ static int replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap)
 		} else if (memcmp(var_start, card_count_var,
 				STRMAX(card_count_var)) == 0) {
 			result = print_var_to(var_start, buf_len, buf_cap,
-				card_count_var, "%lu", quiz_len);
+				card_count_var, "%lu", s_cards_remaining);
 		}
 	}
 	return result;
