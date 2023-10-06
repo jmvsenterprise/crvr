@@ -1,3 +1,3 @@
 [submodule "base"]
 	path = base
-	url = git@github.com:jmvsenterprise/base.git
+	url = https://github.com/jmvsenterprise/base.git
