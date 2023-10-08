@@ -149,34 +149,41 @@ int asl_post(struct request *r, int client)
 
 	printf("params=\"%s\"\n", r->parameters);
 
-	struct param button = {0};
-	if (find_param(&button, r, "button") != 0) {
+	const struct str button_param = STR("button");
+	struct str button = {0};
+	if (find_param(r, &button_param, &button) != 0) {
 		// No button param!
 		perror("No button param in parameters.\n");
 		return EINVAL;
 	}
 
-	printf("button param: %s:%s.\n", button.name, button.value);
+	puts("button param: ");
+	str_print(stdout, &button_param);
+	puts(":");
+	str_print(stdout, &button);
+	puts("\n");
 
 	struct quiz_item *card = quiz + current_quiz_item;
-	if (strcmp(poor_btn, button.value) == 0) {
+	if (str_cmp_cstr(&button, poor_btn) == 0) {
 		// Review this card again during this quiz and reduce the
 		// confidence by half.
 		card->confidence = (int)((float)card->confidence * 0.5);
-	} else if (strcmp(good_btn, button.value) == 0) {
+	} else if (str_cmp_cstr(&button, good_btn) == 0) {
 		// Boost the confidence by 1 and review this card that many
 		// days in the future.
 		card->confidence += 1;
 		card->next_review = s_quiz_start + (SECONDS_PER_DAY *
 			card->confidence);
-	} else if (strcmp(great_btn, button.value) == 0) {
+	} else if (str_cmp_cstr(&button, great_btn) == 0) {
 		// Double the confidence and review the card that many days in
 		// the future.
 		card->confidence *= 2;
 		card->next_review = s_quiz_start + (SECONDS_PER_DAY *
 			card->confidence);
 	} else {
-		printf("Unrecognized button value: \"%s\"\n", button.value);
+		puts("Unrecognized button value: \"");
+		str_print(stdout, &button);
+		puts("\"\n");
 	}
 	printf("card confidence:%i review time:%lu\n", card->confidence,
 		card->next_review);

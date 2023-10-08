@@ -10,6 +10,7 @@
 #include <stdio.h>
 
 #include "pool.h"
+#include "str.h"
 
 // The max length of an HTTP parameter.
 #define PARAM_NAME_MAX 256
@@ -58,14 +59,15 @@ extern const char ok_header[];
 /*
  * Searches for a parameter in the http request.
  *
- * out - The location to save the parameter data when found.
  * r - The request to search through.
  * param_name - The name of the parameter to look for.
+ * value - The str to set to the value of the parameter if found..
  *
- * Returns zero if the parameter was found, or an error code otherwise.
+ * Returns zero if the parameter was found. The value parameter will be set if
+ * zero is returned. Otherwise returns an error code.
  */
-int find_param(struct param out[static 1], struct request r[static 1],
-	const char *param_name);
+int find_param(struct request *r, const struct str *param_name,
+	struct str *value);
 
 char *header_find_value(struct request *r, const char *key);
 

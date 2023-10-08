@@ -6,6 +6,7 @@
 #include "http.h"
 
 #include <errno.h>
+#include <limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -14,32 +15,44 @@
 
 const char ok_header[] = "HTTP/1.1 200 OK";
 
-int find_param(struct param out[static 1], struct request r[static 1],
-	const char *param_name)
+int find_param(struct request *r, const struct str *param_name,
+	struct str *value)
 {
-	*out = (struct param){0};
-
+	char *params = r->parameters;
 	if (!param_name)
 		return EINVAL;
-	char *param = strstr(r->parameters, param_name);
-	if (!param) {
-		printf("Did not find %s in parameters.\n", param_name);
+	if (r->param_len > LONG_MAX) {
+		printf("parameter length (%lu) is larger than a %ld.\n",
+			r->param_len, LONG_MAX);
+	}
+	struct str parameters = {r->parameters, (long)r->param_len};
+	long param_start = str_find_substr(&parameters, param_name);
+	if (param_start == -1) {
+		printf("Did not find \"");
+		str_print(stdout, param_name);
+		puts("\" in parameters.\n");
 		return EINVAL;
 	}
 
-	printf("param: \"%s\"\n", param);
-
-	size_t param_name_len = strlen(param_name);
-	(void)strncpy(out->name, param_name, param_name_len);
-
-	param += param_name_len;
-	printf("after name param: \"%s\"\n", param);
-	if ('=' != *param) {
-		printf("Param is not '=': \"%c\" (0x%hhx)\n", *param, *param);
+	// Find the = after the parameter.
+	param_start += param_name->len;
+	if (param_start < 0) {
+		printf("param start can't be converted to unsigned: %ld\n",
+			param_start);
 		return EINVAL;
 	}
-	param += sizeof((char)'=');
-	printf("after = param: \"%s\"\n", param);
+	if ((unsigned long)param_start >= r->param_len) {
+		puts("Ran out of parameter buffer looking for \"");
+		str_print(stdout, param_name);
+		puts("\"\n");
+		return EINVAL;
+	}
+	if ('=' != params[param_start]) {
+		printf("Param is not '=': \"%c\" (0x%hhx)\n",
+			params[param_start], params[param_start]);
+		return EINVAL;
+	}
+	param_start += sizeof(char);
 
 	/*
 	 * Look for a \r\n or \0. If either one is encountered that's the end
@@ -47,20 +60,27 @@ int find_param(struct param out[static 1], struct request r[static 1],
 	 */
 	size_t value_end = 0;
 	printf("Checking param: ");
-	for (; param[value_end]; ++value_end) {
-		printf("'%c', ", param[value_end]);
-		if (('\n' == param[value_end]) && (value_end > 0) &&
-				(param[value_end - 1] == '\r')) {
+	char *the_value = params + param_start;
+	for (; the_value[value_end]; ++value_end) {
+		printf("'%c', ", the_value[value_end]);
+		if (('\n' == the_value[value_end]) && (value_end > 0) &&
+				(the_value[value_end - 1] == '\r')) {
 			value_end -= (sizeof((char)'\r') + sizeof((char)'\n'));
 			break;
 		}
 	}
 	printf("\n");
 
-	for (size_t i = 0; i < value_end; ++i) {
-		out->value[i] = param[i];
+	if (value_end > LONG_MAX) {
+		printf("Value length %lu > %ld\n", value_end, LONG_MAX);
+		return EINVAL;
 	}
-	printf("param %s:%s.\n", out->name, out->value);
+	*value = (struct str){the_value, (long)value_end};
+	puts("param \"");
+	str_print(stdout, param_name);
+	puts("\"=\"");
+	str_print(stdout, value);
+	puts("\"\n");
 
 	return 0;
 }
