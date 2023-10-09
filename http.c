@@ -52,7 +52,7 @@ int find_param(struct request *r, const struct str *param_name,
 			params[param_start], params[param_start]);
 		return EINVAL;
 	}
-	param_start += sizeof(char);
+	param_start += (long)sizeof(char);
 
 	/*
 	 * Look for a \r\n or \0. If either one is encountered that's the end
