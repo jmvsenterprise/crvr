@@ -14,10 +14,9 @@
 
 const char ok_header[] = "HTTP/1.1 200 OK";
 
-int find_param(struct param out[static 1], struct request r[static 1],
-	const char *param_name)
+int find_param(struct param& out, struct request& r, const char *param_name)
 {
-	*out = (struct param){0};
+	out = (struct param){0};
 
 	if (!param_name)
 		return EINVAL;
@@ -172,7 +171,7 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 	printf("File is %lu bytes.\n", file_size);
-	contents = calloc((size_t)file_size, sizeof(*contents));
+	contents = new char[file_size];
 	if (!contents) {
 		fprintf(stderr, "Failed to allocate buffer for file: %d.\n",
 			errno);

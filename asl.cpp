@@ -150,7 +150,7 @@ int asl_post(struct request *r, int client)
 	printf("params=\"%s\"\n", r->parameters);
 
 	struct param button = {0};
-	if (find_param(&button, r, "button") != 0) {
+	if (find_param(button, *r, "button") != 0) {
 		// No button param!
 		perror("No button param in parameters.\n");
 		return EINVAL;
@@ -293,7 +293,7 @@ static int find_image_files(void)
  */
 static int is_image(const char *file)
 {
-	char *file_types[] = {
+	const char *file_types[] = {
 		".png",
 		".jpg",
 		".jpeg",

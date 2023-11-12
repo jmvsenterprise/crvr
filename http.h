@@ -64,8 +64,7 @@ extern const char ok_header[];
  *
  * Returns zero if the parameter was found, or an error code otherwise.
  */
-int find_param(struct param out[static 1], struct request r[static 1],
-	const char *param_name);
+int find_param(struct param& out, struct request& r, const char *param_name);
 
 char *header_find_value(struct request *r, const char *key);
 

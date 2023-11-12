@@ -190,8 +190,7 @@ int parse_request(char *data, struct request *request)
 			param_start);
 		if (request->param_cap <= request->param_len) {
 			free(request->parameters);
-			request->parameters = calloc(request->param_len + 1,
-				sizeof(*request->parameters));
+			request->parameters = new char[request->param_len + 1];
 			if (!request->parameters) {
 				fprintf(stderr,
 					"Failed to allocate new_params\n");
@@ -273,7 +272,7 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	if (r->param_len + bytes_needed < r->param_cap) {
 		// Resize the buffer to hold all of the parameters.
 		size = r->param_len + bytes_needed + 1;
-		new_buf = calloc(size, sizeof(*new_buf));
+		new_buf = new char[size];
 		if (!new_buf) {
 			fprintf(stderr, "Failed to allocate new buf.\n");
 			return ENOBUFS;
