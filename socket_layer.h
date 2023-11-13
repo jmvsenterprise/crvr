@@ -8,29 +8,32 @@
 #ifndef SOCKET_LAYER_H
 #define SOCKET_LAYER_H
 
-#if WINDOWS
-#include <winsock2.h>
-#elif UNIX | LINUX
-#include <errno.h>
-#include <netinet/in.h>
-#include <sys/socket.h>
-#include <sys/types.h>
-#include <unistd.h>
-#endif
+#include <optional>
 
-/*
- * Initialize the socket layer for windows.
- */
-int init_socket_layer(void) { return 0; }
+namespace system {
 
-/*
- * Cleanup the socket layer.
- */
-void cleanup_socket_layer(void) {}
+struct socketry {
+	socketry();
+	~socketry();
+	// Prohibit copy and move, this should only be instantiated once.
+	socketry(const socketry&) = delete;
+	socketry(socketry&&) = delete;
+	socketry& operator=(const socketry&) = delete;
+	socketry& operator=(socketry&&) = delete;
 
-/*
- * Retrieve the error from the socket layer.
- */
-int get_error(void) { return errno; }
+	int get_error();
+
+private:
+	static bool initialized;
+	
+	/**
+	 * @brief Initialize the socket layer.
+	 * 
+	 * @return Returns a valid socketry object if initialization was successful.
+	 */
+	static std::optional<socketry> init();
+};
+
+} // End namespace system
 
 #endif // SOCKET_LAYER_H

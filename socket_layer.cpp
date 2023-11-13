@@ -3,33 +3,61 @@
  *
  * Defines the routines that initialize or deinitialize the socket layer.
  */
+#include "socket_layer.h"
+
 #if WINDOWS
 #include <winsock2.h>
+#include <iostream>
 
-static int init_socket_layer(void)
+namespace system {
+
+// Not sure how to initialize the WSA layer whenever I need socket functions
+// yet.
+bool socketry::initialized{0};
+
+socketry::socketry()
 {
-	// Startup winsock.
-	struct WSAData wsa_data = {0};
-	int result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
-	if (result != 0) {
-		printf("WSA Startup failed: %d.\n", result);
-		return -1;
-	}
-	return 0;
 }
-
-static void cleanup_socket_layer(void)
+socketry::~socketry()
 {
 	WSACleanup();
 }
 
-static int get_error(void)
+int socketry::get_error()
 {
 	WSAGetLastError();
 }
 
-#elif UNIX
-// Nothing
+std::optional<socketry> socketry::init()
+{
+	static system::socketry socketry;
+
+	// Startup winsock.
+	struct WSAData wsa_data = {0};
+	int result = WSAStartup(MAKEWORD(2, 2), &wsa_data);
+	if (result != 0) {
+		::std::cerr << "WSA Startup failed: " << result << '\n';
+		return {};
+	}
+	return {socketry};
+}
+
+static void cleanup_socket_layer(void)
+{
+}
+
+static int get_error(void)
+{
+}
+
+} // End namespace system
+
+#elif UNIX | LINUX
+#include <errno.h>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/types.h>
+#include <unistd.h>
 #else
 
 #error ("No build type specified")

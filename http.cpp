@@ -8,7 +8,6 @@
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "utils.h"
 
@@ -16,11 +15,11 @@ const char ok_header[] = "HTTP/1.1 200 OK";
 
 int find_param(struct param& out, struct request& r, const char *param_name)
 {
-	out = (struct param){0};
+	out = {};
 
 	if (!param_name)
 		return EINVAL;
-	char *param = strstr(r->parameters, param_name);
+	char *param = strstr(r.parameters, param_name);
 	if (!param) {
 		printf("Did not find %s in parameters.\n", param_name);
 		return EINVAL;
@@ -29,7 +28,7 @@ int find_param(struct param& out, struct request& r, const char *param_name)
 	printf("param: \"%s\"\n", param);
 
 	size_t param_name_len = strlen(param_name);
-	(void)strncpy(out->name, param_name, param_name_len);
+	(void)strncpy(out.name, param_name, param_name_len);
 
 	param += param_name_len;
 	printf("after name param: \"%s\"\n", param);
@@ -57,9 +56,9 @@ int find_param(struct param& out, struct request& r, const char *param_name)
 	printf("\n");
 
 	for (size_t i = 0; i < value_end; ++i) {
-		out->value[i] = param[i];
+		out.value[i] = param[i];
 	}
-	printf("param %s:%s.\n", out->name, out->value);
+	printf("param %s:%s.\n", out.name, out.value);
 
 	return 0;
 }
