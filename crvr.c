@@ -47,40 +47,50 @@ void print(struct sockaddr_in *address)
  */
 int parse_request_buffer(struct request *request)
 {
-	const char eol[] = "\r\n";
+	const struct str eol = STR("\r\n");
 	const char index_page[] = "index.html";
 
 	// Type, path and format are all on the first line.
-	char *end_of_line = strstr(request->buffer, eol);
-	if (!end_of_line) {
+	struct str req_buf = {request->buffer, strlen(request->buffer)};
+	if (req_buf.len > LEN(buffer)) {
+		printf("request too big: %u. Forcing to %u.\n", req_buf.len,
+			LEN(buffer));
+		req_buf.len = LEN(buffer);
+	}
+
+	long end_of_line = str_find_substr(&req_buf, &eol);
+	if (end_of_line == -1) {
 		// Uh... wut? We should have at least one EOL.
 		fprintf(stderr, "Did not find EOL in header. Header:\n%s\n",
 			request->buffer);
 		return EINVAL;
 	}
-	// Put a null in to stop searches for spaces.
-	*end_of_line = 0;
+	struct str header = {req_buf.s, end_of_line};
+	const struct str space = STR(" ");
+
 	// Find the space between GET\POST and the path.
-	char *space = strstr(request->buffer, " ");
-	if (!space) {
-		fprintf(stderr, "Did not find GET\\POST to path space in header. Header: \"%s\"\n",
-			request->buffer);
+	long req_type_end = str_find_substr(&header, &space);
+	if (req_type_end == -1) {
+		fputs("Did not find GET\\POST to path space in header. Header: \"",
+			stderr);
+		str_print(stderr, &header);
+		fputs("\"\n");
 		return EINVAL;
 	}
+	struct str req_type = {header.s, req_type_end};
 
-	// Set the space to null and then figure out the request type from the
-	// string.
-	*space = 0;
-	if (strcmp(request->buffer, "GET") == 0) {
+	// Figure out the request type from the string.
+	if (str_cmp_cstr(&req_type, "GET") == 0) {
 		request->type = GET;
-	} else if (strcmp(request->buffer, "POST") == 0) {
+	} else if (str_cmp_cstr(&req_type, "POST") == 0) {
 		request->type = POST;
 	} else {
-		fprintf(stderr, "Unrecognized request type \"%s\"\n",
-			request->buffer);
+		fputs("Unrecognized request type \"", stderr);
+		str_print(stderr, &req_type);
+		fputs("\"\n");
 		return EINVAL;
 	}
-
+#error Working here
 	// Now lets get the path.
 	char *start = space + 1;
 	space = strstr(start, " ");
