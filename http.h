@@ -27,27 +27,21 @@ enum request_type {
 /*
  * An HTTP request.
  */
-struct request {
-	enum request_type type;
-	char path[FILENAME_MAX];
-	char *format;
-	size_t header_count;
-	struct header {
-		char *key;
-		char *value;
-	} headers[20];
-	char buffer[1024];
-	size_t param_len;
-	size_t param_cap;
-	char *parameters;
+#define MAX_HEADER_LINES (20)
+
+struct http_param {
+	struct str key;
+	struct str value;
 };
 
-/*
- * An extracted HTTP parameter.
- */
-struct param {
-	char name[PARAM_NAME_MAX];
-	char value[PARAM_VALUE_MAX];
+struct request {
+	enum request_type type;
+	struct str path;
+	struct str format;
+	long param_count;
+	long param_cap = MAX_HEADER_LINES;
+	struct http_param params[MAX_HEADER_LINES];
+	char buffer[1024];
 };
 
 /*

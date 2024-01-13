@@ -21,6 +21,7 @@
 #include "asl.h"
 #include "pool.h"
 #include "socket_layer.h"
+#include "str.h"
 #include "utils.h"
 
 // Default port for the webserver
@@ -41,6 +42,65 @@ void print(struct sockaddr_in *address)
 		port);
 }
 
+static int parse_into_param(struct str *line, struct http_param *param)
+{
+	const struct str separator = ":";
+
+	if (!line || !param) return EINVAL;
+	const long sep_loc = str_find_substr(line, &separator);
+	if (sep_loc == -1) return EPROTO;
+	param->key = {line.s, sep_loc};
+	param->value = {line.s + sep_loc, line.len - sep_loc};
+	return 0;
+}
+
+static int add_param_to_request(struct request *r, struct http_param *param)
+{
+	if (!r || !param) return EINVAL;
+	if (r->param_count >= r->param_cap) return ENOBUFS;
+	r->params[r->param_count] = *param;
+	r->param_count++;
+	return 0;
+}
+
+/**
+ * @brief Parses the header after the request line.
+ *
+ * Now continue through the buffer looking for new lines. Each new line
+ * delimits a http header (key: value). Then div it up into our headers array.
+ *
+ * @param[in] rest_of_header - the remaining header after the request line.
+ * @param[in,out] r - The request to populate with data.
+ *
+ * @return Returns 0 if the header is successfully parsed. Otherwise returns an
+ *         error code.
+ */
+static int parse_header_options(struct str *rest_of_header, struct request *r)
+{
+	int error = 0;
+	const str newline = STR("\r\n");
+	struct http_param param = {0};
+
+	if (!rest_of_header || !r) {
+		return EINVAL;
+	}
+
+	while (rest_of_header->len > 0) {
+		struct str line = rest_of_header;
+		long eol = str_find_substr(&line, &new_line);
+		if (eol != -1) line.len = eol;
+		rest_of_header->s += line.len;
+		rest_of_header->len -= line.len;
+
+		error = parse_into_param(&line, &param);
+		if (error) return error;
+		error = add_param_to_request(r, &param);
+	}
+
+	printf("Found %lu headers.\n", request->header_count);
+	return 0;
+}
+
 /*
  * Parse the buffer in the request. Determine if it is a POST or GET request
  * and parse its parameters storing the data in the request itself.
@@ -49,6 +109,7 @@ int parse_request_buffer(struct request *request)
 {
 	const struct str eol = STR("\r\n");
 	const char index_page[] = "index.html";
+	const struct str space = STR(" ");
 
 	// Type, path and format are all on the first line.
 	struct str req_buf = {request->buffer, strlen(request->buffer)};
@@ -66,7 +127,6 @@ int parse_request_buffer(struct request *request)
 		return EINVAL;
 	}
 	struct str header = {req_buf.s, end_of_line};
-	const struct str space = STR(" ");
 
 	// Find the space between GET\POST and the path.
 	long req_type_end = str_find_substr(&header, &space);
@@ -90,74 +150,59 @@ int parse_request_buffer(struct request *request)
 		fputs("\"\n");
 		return EINVAL;
 	}
-#error Working here
+
 	// Now lets get the path.
-	char *start = space + 1;
-	space = strstr(start, " ");
-	if (!space) {
-		fprintf(stderr, "Failed to find path end: \"%s\"\n", start);
+	struct str path = {header.s + req_type.len, header.len - req_type.len};
+	long path_end = str_find_substr(&path, &space);
+	if (path_end == -1) {
+		fprintf(stderr, "Failed to find path end: \"");
+		str_print(stderr, &header);
+		fprintf(stderr, "\"\n");
 		return EINVAL;
 	}
-	*space = 0;
+	path.len = path_end;
+
+	// The rest of the line is the format.
+	struct str format = {path.s + path.len, header.len - type.len -
+		path.len};
 
 	// Handle some special cases for path. If it is just /, change it to
 	// just load index.html. Easiest to do this before copying it into the
 	// request.
-	if (*start == '/') {
-		start++;
+	const struct str index_page = STR("index.html");
+
+	if (str_cmp(&path, &slash_only) == 0) {
+		path = index_page;
 	}
-	/*
-	 * If start is empty, default to index.html.
-	 */
-	if (strlen(start) == 0) {
-		strncpy(request->path, index_page, STRMAX(request->path));
-	} else {
-		strncpy(request->path, start, STRMAX(request->path));
-	}
+
 	// If it is a directory (ends in /) append "index.html".
-	size_t path_len = strlen(request->path);
-	if (request->path[path_len] == '/') {
-		strncat(request->path, index_page, strlen(request->path) -
-			STRMAX(index_page));
+	if (path->s[path->len] == '/') {
+		struct str actual_path = {0};
+		long space_needed = path->len + index_path.len;
+		int error = alloc_str(p, space_needed, &actual_path);
+		if (error) {
+			fprintf(stderr, "Failed to allocate actual path: %i.\n",
+				error);
+			return EINVAL;
+		}
+		assert(actual_path.len == space_needed);
+		assert(actual_path.len >= path.len + index_page.len);
+		(void)memcpy(actual_path.s, path.s, path.len);
+		(void)strncat(actual_path.s + actual_path.len, index_page.s,
+			index_page.len);
+
+		path = actual_path;
 	}
 
-	// The rest of the line is the format.
-	request->format = space + 1;
-
-	// Now continue through the buffer looking for new lines. Each new
-	// line delimits a http header (key: value). Then div it up into our
-	// headers array.
-	start = end_of_line + STRMAX(eol);
-	while (start && (request->header_count < LEN(request->headers))) {
-		request->headers[request->header_count].key = start;
-		char *end = strstr(start, eol);
-		if (end) {
-			*end = 0;
-			const char value_delimieter[] = ": ";
-			char *value_start = strstr(start, value_delimieter);
-			if (value_start) {
-				*value_start = 0;
-				request->headers[request->header_count].value =
-					value_start + STRMAX(value_delimieter);
-			} else {
-				fprintf(stderr, "No value for \"%s\"\n",
-					start);
-			}
-			request->header_count++;
-		}
-		start = end;
-		if (start) {
-			start += STRMAX(eol);
-		}
-	}
-
-	printf("Found %lu headers.\n", request->header_count);
-
+	const struct str rest_of_header = {header.s + header.len,
+	       req_buf.len - header.len};
+	parse_header_options(&rest_of_header, r);
 	return 0;
 }
 
 int parse_request(char *data, struct request *request)
 {
+#error Working here. Need to switch over to strs.
 	memset(request, 0, sizeof(*request));
 
 	const char *header_separator = "\r\n\r\n";
@@ -304,7 +349,7 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		r->param_len += (size_t)in;
 		printf("Read %ld (%lu/%lu)\n", in, r->param_len, bytes_needed);
 	}
-	printf("Parameters read in. Total %lu\n", r->param_len);
+	printf("Parameters read in. Total %lu\n", r->param_count);
 
 	print_request(r);
 

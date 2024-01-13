@@ -16,6 +16,8 @@
 
 #include <stdio.h>
 
+struct pool;
+
 struct str {
 	char *s;
 	long len;
@@ -63,9 +65,42 @@ long str_find_substr(const struct str *haystack, const struct str *needle);
  */
 int str_print(FILE *f, const struct str *s);
 
+/**
+ * @brief Creates a buffer in the pool and stores it in a str.
+ *
+ * This function creates a buffer of the requested length in the pool and
+ * contains it in an str.
+ *
+ * @param[in,out] p - The pool to allocate the buffer in.
+ * @param[in] space_needed - The size the buffer should be in bytes.
+ * @param[out] s - The str to store the buffer to.
+ *
+ * @return Returns 0 if successful, otherwise returns an error code.
+ */
+int alloc_str(struct pool *p, const unsigned long space_needed, struct str *s);
+
+/**
+ * @brief Copies the c-string into an str.
+ *
+ * Copies the c-string data into a buffer on the pool and updates a provided str
+ * to contain that data. The data for the str remains in the pool.
+ *
+ * @param[in,out] p - The pool to allocate the buffer in.
+ * @param[in] cstr - The c-string to copy into the pool.
+ * @param[in] len - The length of the cstr to copy.
+ * @param[in,out] s - The str to store the data to.
+ *
+ * @return Returns 0 if the data was copied to the pool and the str was updated.
+ *         Otherwise returns an error code.
+ */
+int alloc_from_str(struct pool *p, const char *cstr, const long len,
+	struct str *s);
+
+
 #ifdef DEFINE_STR
 
 #include <string.h>
+#include "pool.h"
 
 int str_cmp(const struct str *a, const struct str *b)
 {
@@ -130,6 +165,30 @@ int str_print(FILE *f, const struct str *s)
   int result = fputs(s->s, f);
   s->s[s->len] = end;
   return result;
+}
+
+int alloc_str(struct pool *p, const long space_needed, struct str *s)
+{
+	if (!p || !s || (space_needed == 0)) {
+		return EINVAL;
+	}
+	s->s = pool_alloc(p, space_needed);
+	if (!s->s) {
+		return ENOMEM;
+	}
+	s->len = space_needed;
+	return 0;
+}
+
+int alloc_from_str(struct pool *p, const char *cstr, const long len,
+	struct str *s)
+{
+	int alloc_error = alloc_str(p, len, s);
+	if (alloc_error) {
+		return alloc_error;
+	}
+	(void)memcpy(s->s, cstr, s->len);
+	return 0;
 }
 
 #endif // DEFINE_STR

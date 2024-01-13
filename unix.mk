@@ -1,7 +1,7 @@
 OUTEXT=
 OBJ=o
 
-COMMON_FLAGS=-DUNIX=1 -Werror -Wextra -Wall -Wconversion
+COMMON_FLAGS=-DUNIX=1 -Werror -Wextra -Wall -Wconversion -mshstk -fanalyzer
 #SANITIZERS=-fsanitize=address -fsanitize=undefined
 DEBUG_FLAGS=-g -O0 $(COMMON_FLAGS) $(SANITIZERS)
 RELEASE_FLAGS=-Os $(COMMON_FLAGS)
