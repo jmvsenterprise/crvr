@@ -34,6 +34,12 @@ struct http_param {
 	struct str value;
 };
 
+struct post_param {
+	struct str key;
+	struct str value;
+	struct post_param *next;
+};
+
 struct request {
 	enum request_type type;
 	struct str path;
@@ -41,7 +47,8 @@ struct request {
 	long param_count;
 	long param_cap = MAX_HEADER_LINES;
 	struct http_param params[MAX_HEADER_LINES];
-	char buffer[1024];
+	struct str buffer;
+	struct str post_params_buffer;
 };
 
 /*

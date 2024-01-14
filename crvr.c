@@ -200,62 +200,30 @@ int parse_request_buffer(struct request *request)
 	return 0;
 }
 
-int parse_request(char *data, struct request *request)
+int parse_request(char *data, long data_len, struct request *request)
 {
-#error Working here. Need to switch over to strs.
+	if (!data || !request || (data_len <= 0)) return EINVAL;
+
 	memset(request, 0, sizeof(*request));
 
-	const char *header_separator = "\r\n\r\n";
+	const struct str header_separator = STR("\r\n\r\n");
+
+	request->buffer.s = data;
+	request->buffer.len = strlen(data);
+	if (req_data.len < data_len) req_data.len = data_len;
 
 	// Find the end of the header.
-	char *end_of_header = strstr(data, header_separator);
+	long end_of_header = str_find_substr(&request->buffer,
+		&header_separator);
 
-	// If the header didn't end, copy the whole thing into the request.
-	// Otherwise just copy the header.
-	size_t amount;
-	if (end_of_header) {
-		amount = (size_t)(end_of_header - data);
-	} else {
-		amount = strlen(data);
-	}
+	// If we didn't find the end of the header, refuse to parse it. Probably
+	// need a bigger buffer.
+	if (end_of_header != -1) return ENOBUFS;
 
-	// If the header is bigger than the request can store, refuse to
-	// cooperate.
-	if (amount >= STRMAX(request->buffer)) {
-		fprintf(stderr, "Request header too big: %lu > %lu\n", amount,
-			STRMAX(request->buffer));
-		return ENOBUFS;
-	}
-
-	(void)strncpy(request->buffer, data, amount);
-	memset(request->buffer + amount, 0, LEN(request->buffer) - amount);
-
-	int result = parse_request_buffer(request);
-	if (result) {
-		fprintf(stderr, "Failed to parse request buffer %d.\n",
-			result);
-		return result;
-	}
-
-	// If its a post request set the parameters pointer, which will be
-	// past the end of the header.
-	if (request->type == POST) {
-		char *param_start = end_of_header + strlen(header_separator);
-		request->param_len = (size_t)((data + strlen(data)) -
-			param_start);
-		if (request->param_cap <= request->param_len) {
-			free(request->parameters);
-			request->parameters = calloc(request->param_len + 1,
-				sizeof(*request->parameters));
-			if (!request->parameters) {
-				fprintf(stderr,
-					"Failed to allocate new_params\n");
-				return ENOBUFS;
-			}
-		}
-		strncpy(request->parameters, param_start, request->param_len);
-	} else {
-		request->param_len = 0;
+	int err = parse_request_buffer(request);
+	if (err) {
+		fprintf(stderr, "Failed to parse request buffer %d.\n", err);
+		return err;
 	}
 
 	return 0;
@@ -273,16 +241,21 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 		printf("Dynamic URI\n");
 		return asl_get(request, client);
 	}
-	printf("Regular URI\n");
 	FILE *f = NULL;
-	f = fopen(request->path, "r");
+	char file_path[PATH_MAX] = {0};
+
+	int err = copy_str_to_cstr(file_path, PATH_MAX, &request->path);
+	if (err) return err;
+
+	f = fopen(file_path, "r");
 	if (!f) {
-		fprintf(stderr, "%s not found.\n", request->path);
-		return send_404(client);
+		fprintf(stderr, "\"%s\" not found.\n", file_path);
+		err = send_404(client);
+	} else {
+		err = send_file(f, client, p);
+		fclose(f);
 	}
-	int result = send_file(f, client, p);
-	fclose(f);
-	return result;
+	return err;
 }
 
 int handle_post_request(int client, struct request *r, struct pool *p,
@@ -290,25 +263,24 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 {
 	char *value;
 	long total_len;
-	size_t bytes_needed;
-	size_t size;
-	char *new_buf;
+	long bytes_needed;
 
 	(void)client;
 	(void)p;
 
 	// Convert the content-length in the header to bytes.
-	value = header_find_value(r, "Content-Length");
-	if (!value) {
+	struct str content_len = {0};
+	int err = header_find_value(r, "Content-Length", &content_len);
+	if (err) {
 		fprintf(stderr, "Did not find Content-Length in header\n");
 		print_request(r);
 		return EINVAL;
 	}
-	total_len = strtol(value, NULL, 10);
-	if ((errno == EINVAL) || (errno == ERANGE)) {
+	err = str_to_long(&content_len, &total_len, 10);
+	if (err) {
 		fprintf(stderr, "Failed to convert %s to long. %u.\n", value,
-			errno);
-		return ERANGE;
+			err);
+		return err;
 	}
 	if (total_len < 0) {
 		fprintf(stderr, "Invalid content length %lu.\n", total_len);
@@ -317,39 +289,30 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	printf("content length is %ld\n", total_len);
 	bytes_needed = (size_t)total_len;
 
-	if (bytes_needed > GIGABYTE) {
+	if (bytes_needed > pool_get_remaining_capacity(p)) {
 		fprintf(stderr, "Request too big: %lu. Max: %d.\n",
-			bytes_needed, GIGABYTE);
-		return EINVAL;
+			bytes_needed, pool_get_remaining_capacity(p));
+		return ENOBUFS;
 	}
 	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
 		bytes_received, bytes_needed);
-	
-	if (r->param_len + bytes_needed < r->param_cap) {
-		// Resize the buffer to hold all of the parameters.
-		size = r->param_len + bytes_needed + 1;
-		new_buf = calloc(size, sizeof(*new_buf));
-		if (!new_buf) {
-			fprintf(stderr, "Failed to allocate new buf.\n");
-			return ENOBUFS;
-		}
-		strncpy(new_buf, r->parameters, size);
-		free(r->parameters);
-		r->parameters = new_buf;
-		r->param_cap = size;
-	}
-	while (r->param_len < bytes_needed) {
-		size_t space = bytes_needed - r->param_len;
-		ssize_t in = read(client, r->parameters + r->param_len, space);
+
+	alloc_str(&r->post_params_buffer, bytes_needed);
+	long bytes_read = 0;
+	while (bytes_read < bytes_needed) {
+		// Need to update space below if this isn't the case.
+		assert(SIZE_MAX > LONG_MAX);
+		size_t space = (size_t)(bytes_needed - bytes_read);
+		ssize_t in = read(client, r->post_params_buffer.s + bytes_read,
+			space);
 		if (in < 0) {
 			fprintf(stderr, "Failed to read from client: %d.\n",
 				errno);
 			return errno;
 		}
-		r->param_len += (size_t)in;
-		printf("Read %ld (%lu/%lu)\n", in, r->param_len, bytes_needed);
+		bytes_read += in;
+		printf("Read %ld (%lu/%lu)\n", in, bytes_read, bytes_needed);
 	}
-	printf("Parameters read in. Total %lu\n", r->param_count);
 
 	print_request(r);
 
@@ -379,23 +342,25 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	}
 
 	struct request request;
-	if (parse_request(buffer, &request) != 0) {
+	const long start = pool_get_position(p);
+	if (parse_request(buffer, LEN(buffer), &request) != 0) {
 		fprintf(stderr,
 			"Failed to parse client's request.\nBuffer was:\n%s\n",
 			buffer);
 		return -1;
 	}
-	int result = 0;
+	int err = 0;
 	if (request.type == GET) {
-		result = handle_get_request(client, &request, p);
+		err = handle_get_request(client, &request, p);
 	} else {
-		result = handle_post_request(client, &request, p, bytes_rxed);
+		err = handle_post_request(client, &request, p, bytes_rxed);
 	}
-	if (result != 0) {
+	if (err != 0) {
 		fprintf(stderr, "Failed to handle client %d\nBuffer was:\n%s\n",
-			result, buffer);
+			err, buffer);
 	}
-	return result;
+	pool_reset(p, start);
+	return err;
 }
 
 int serve(int server_sock)

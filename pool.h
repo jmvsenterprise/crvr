@@ -20,8 +20,8 @@
  * the total capacity of the block.
  */
 struct pool {
-	unsigned long offset;
-	unsigned long cap;
+	long offset;
+	long cap;
 	char *buffer;
 };
 
@@ -35,6 +35,15 @@ struct pool {
  * size. Otherwise returns an error code.
  */
 int pool_init(struct pool *p, unsigned long desired_size);
+
+/**
+ * @brief Return the number of unused bytes in the pool.
+ *
+ * @param[in] p - The pool to query.
+ *
+ * @return Returns the space left in p. Returns -1 if p is NULL.
+ */
+long pool_get_remaining_capacity(struct pool *p)
 
 /*
  * Free all memory allocated to the pool.
@@ -56,10 +65,22 @@ void pool_free(struct pool *p);
  * Returns a valid pointer if successful. If the pool has no more memory
  * NULL will be returned.
  */
-void *pool_alloc(struct pool *p, unsigned long byte_amount);
+void *pool_alloc(struct pool *p, long byte_amount);
 
-/*
- * Reset the pool to a specific offset, reclaiming memory.
+/**
+ * @brief Returns the current position of the pool.
+ *
+ * The value returned can be used to reset the pool to an earlier location,
+ * effectively freeing everything that happened after the location was obtained.
+ *
+ * @param[in] p - The pool to get the value from.
+ *
+ * @return Returns the pool's current position. Returns -1 if p is NULL.
+ */
+long pool_get_position(struct pool *p);
+
+/**
+ * @brief Reset the pool to a specific offset, reclaiming memory.
  *
  * If one saves the pool's offset to a variable, one can call pool_alloc
  * after that and it will allocate memory above that offset. Sending that
@@ -70,10 +91,13 @@ void *pool_alloc(struct pool *p, unsigned long byte_amount);
  * then get rid of all the memory in constant time. Pass in an offset of
  * 0 to reclaim the entire pool for reuse.
  *
- * p - The pool to reset.
- * offset - The offset to set the pool to.
+ * @param[in,out] p - The pool to reset.
+ * @param[in] offset - The offset to set the pool to.
+ *
+ * @return Returns 0 if the pool was reset successfully. Otherwise returns an
+ *         error code.
  */
-void pool_reset(struct pool *p, unsigned long offset);
+int pool_reset(struct pool *p, long offset);
 
 /*
  * Helper macro to allocate memory for a specific type of object.
@@ -130,7 +154,7 @@ void pool_free(struct pool *p)
 	p->offset = p->cap = 0;
 }
 
-void *pool_alloc(struct pool *p, unsigned long byte_amount)
+void *pool_alloc(struct pool *p, long byte_amount)
 {
 	unsigned long alignment = sizeof(void*) - byte_amount % sizeof(void*);
 	byte_amount += alignment;
@@ -141,6 +165,25 @@ void *pool_alloc(struct pool *p, unsigned long byte_amount)
 	void *allocation = (void*)(p->buffer + p->offset);
 	p->offset += byte_amount;
 	return allocation;
+}
+
+long pool_get_position(struct pool *p)
+{
+	if (!p) return -1;
+	return p->offset;
+}
+
+int pool_reset(struct pool *p, long offset)
+{
+	if (!p || (offset < 0)) return EINVAL;
+	p->offset = offset;
+	return 0;
+}
+
+long pool_get_remaining_capacity(struct pool *p)
+{
+	if (!p) return -1;
+	return p->cap - p->offset;
 }
 
 #endif // DEFINE_POOL
