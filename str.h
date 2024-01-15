@@ -25,7 +25,11 @@ struct str {
 	long len;
 };
 
-#define STR(string) (struct str){string, (sizeof(string) / sizeof(string[0]))}
+/* -1 for \0 */
+#define STR(string) (struct str){\
+	string,\
+	(sizeof(string) / sizeof(string[0])) - 1\
+}
 
 /*
  * Compare two strs.
@@ -133,24 +137,33 @@ int str_copy_to_cstr(const struct str *s, char *dest, long dest_len);
 
 int str_cmp(const struct str *a, const struct str *b)
 {
+	long i;
+	long len = a->len;
 	if (a == b) return 0;
-	for (long i = 0; i < a->len; ++i) {
-		for (long j = 0; j < b->len; ++j) {
-			if (a->s[i] < b->s[i]) return -1;
-			if (a->s[i] > b->s[i]) return 1;
-		}
+	// Is one bigger than the other? In that case, only compare values to
+	// the smallest number.
+	if (b->len < len) {
+		len = b->len;
 	}
-	return 0;
+	for (i = 0; i < len; ++i) {
+		if (a->s[i] < b->s[i]) return -1;
+		if (a->s[i] > b->s[i]) return 1;
+	}
+	// If the lengths didn't match, return which one was smaller.
+	if (a->len == b->len) return 0;
+	if (a->len < b->len) return -1;
+	return 1;
 }
 
 int str_cmp_cstr(const struct str *s, const char *cs)
 {
-	const size_t len = strlen(cs);
-	for (long i = 0; i < s->len; ++i) {
-		for (size_t j = 0; j < len; ++j) {
-			if (s->s[i] < cs[j]) return -1;
-			if (s->s[i] > cs[j]) return 1;
-		}
+	size_t unsigned_len = strlen(cs);
+	if (unsigned_len > LONG_MAX) return ERANGE;
+	long len = (long)unsigned_len;
+	long i;
+	for (i = 0; i < len; ++i) {
+		if (s->s[i] < cs[i]) return -1;
+		if (s->s[i] > cs[i]) return 1;
 	}
 	return 0;
 }
@@ -163,10 +176,14 @@ long str_find_substr(const struct str *haystack, const struct str *needle)
 	long i = 0;
 	long j;
 	int found = 0;
+	char left;
+	char right;
 	for (; i < haystack->len; ++i) {
 		found = 1;
-		for (j = 1; (i + j < haystack->len) && (j < needle->len); ++j) {
-			if (haystack->s[i + j] != needle->s[j]) {
+		for (j = 0; (i + j < haystack->len) && (j < needle->len); ++j) {
+			left = haystack->s[i + j];
+			right = needle->s[j];
+			if (left != right) {
 				// Skip characters we scanned.
 				i += j;
 				found = 0;
@@ -180,11 +197,11 @@ long str_find_substr(const struct str *haystack, const struct str *needle)
 
 int str_print(FILE *f, const struct str *s)
 {
-	const char end = s->s[s->len];
-	s->s[s->len] = '\0';
-	int result = fputs(s->s, f);
-	s->s[s->len] = end;
-	return result;
+	if (!f || !s) return EINVAL;
+	for (long i = 0; i < s->len; ++i) {
+		fputc(s->s[i], f);
+	}
+	return 0;
 }
 
 int str_alloc(struct pool *p, const long space_needed, struct str *s)

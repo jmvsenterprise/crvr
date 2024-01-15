@@ -59,7 +59,10 @@ static int add_param_to_request(struct request *r, struct http_param *param)
 {
 	if (!r || !param) return EINVAL;
 	assert(LEN(r->params) <= LONG_MAX);
-	if (r->param_count >= (long)LEN(r->params)) return ENOBUFS;
+	if (r->param_count >= (long)LEN(r->params)) {
+		DEBUG("invalid param count");
+		return ENOBUFS;
+	}
 	r->params[r->param_count] = *param;
 	r->param_count++;
 	return 0;
@@ -151,34 +154,37 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	}
 
 	// Now lets get the path.
-	struct str path = {header.s + req_type.len, header.len - req_type.len};
-	long path_end = str_find_substr(&path, &space);
+	request->path = (struct str){
+		header.s + req_type.len + 1,
+		header.len - req_type.len - 1
+	};
+	long path_end = str_find_substr(&request->path, &space);
 	if (path_end == -1) {
 		fprintf(stderr, "Failed to find path end: \"");
 		str_print(stderr, &header);
 		fprintf(stderr, "\"\n");
 		return EINVAL;
 	}
-	path.len = path_end;
+	request->path.len = path_end;
 
 	// The rest of the line is the format.
 	request->format = (struct str){
-		path.s + path.len,
-		header.len - req_type.len - path.len
+		request->path.s + request->path.len + 1,
+		header.len - req_type.len - request->path.len - 1
 	};
 
 	// Handle some special cases for path. If it is just /, change it to
 	// just load index.html. Easiest to do this before copying it into the
 	// request.
 
-	if (str_cmp(&path, &slash_only) == 0) {
-		path = index_page;
+	if (str_cmp(&request->path, &slash_only) == 0) {
+		request->path = index_page;
 	}
 
 	// If it is a directory (ends in /) append "index.html".
-	if (path.s[path.len] == '/') {
+	if (request->path.s[request->path.len] == '/') {
 		struct str actual_path = {0};
-		long space_needed = path.len + index_page.len;
+		long space_needed = request->path.len + index_page.len;
 		int error = str_alloc(p, space_needed, &actual_path);
 		if (error) {
 			fprintf(stderr, "Failed to allocate actual path: %i.\n",
@@ -186,18 +192,21 @@ int parse_request_buffer(struct request *request, struct pool *p)
 			return EINVAL;
 		}
 		assert(actual_path.len == space_needed);
-		assert(actual_path.len >= path.len + index_page.len);
-		static_assert(sizeof(size_t) >= sizeof(path.len));
+		assert(actual_path.len >= request->path.len + index_page.len);
+		static_assert(sizeof(size_t) >= sizeof(request->path.len));
 		static_assert(SIZE_MAX > LONG_MAX);
-		(void)memcpy(actual_path.s, path.s, (size_t)path.len);
+		(void)memcpy(actual_path.s, request->path.s,
+			(size_t)request->path.len);
 		(void)strncat(actual_path.s + actual_path.len, index_page.s,
 			(size_t)index_page.len);
 
-		path = actual_path;
+		request->path = actual_path;
 	}
 
-	const struct str rest_of_header = {header.s + header.len,
-	       req_buf.len - header.len};
+	const struct str rest_of_header = {
+		header.s + header.len + eol.len,
+		req_buf.len - header.len - eol.len
+	};
 	parse_header_options(rest_of_header, request);
 	return 0;
 }
@@ -209,7 +218,7 @@ int parse_request(char *data, long data_len, struct request *request,
 
 	memset(request, 0, sizeof(*request));
 
-	const struct str header_separator = STR("\r\n\r\n");
+	static const struct str header_separator = STR("\r\n\r\n");
 
 	const size_t data_str_len = strlen(data);
 	if (data_str_len < (size_t)data_len) {
@@ -225,7 +234,10 @@ int parse_request(char *data, long data_len, struct request *request,
 
 	// If we didn't find the end of the header, refuse to parse it. Probably
 	// need a bigger buffer.
-	if (end_of_header != -1) return ENOBUFS;
+	if (end_of_header == -1) {
+		DEBUG("No end to header found\n");
+		return ENOBUFS;
+	}
 
 	int err = parse_request_buffer(request, p);
 	if (err) {
@@ -356,13 +368,14 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 
 	struct request request;
 	const long start = pool_get_position(p);
-	if (parse_request(buffer, LEN(buffer), &request, p) != 0) {
+	int err = parse_request(buffer, LEN(buffer), &request, p);
+	if (err) {
 		fprintf(stderr,
-			"Failed to parse client's request.\nBuffer was:\n%s\n",
-			buffer);
+			"Failed to parse client's request (%i).\n"
+			"Buffer was:\n%s\n", err, buffer);
 		return -1;
 	}
-	int err = 0;
+	err = 0;
 	if (request.type == GET) {
 		err = handle_get_request(client, &request, p);
 	} else {

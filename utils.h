@@ -21,6 +21,14 @@
 #define LEN(p) (sizeof(p) / sizeof(p[0]))
 #define STRMAX(p) (LEN(p) - 1)
 
+void debug(const char *format, ...);
+
+#ifdef NDEBUG
+#define DEBUG(...) __noop()
+#else
+#define DEBUG(...) debug(__VA_ARGS__)
+#endif
+
 /*
  * Load the contents of a file into a buffer.
  *

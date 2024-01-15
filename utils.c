@@ -17,6 +17,16 @@
 // The number of bytes to show on a line in print_blob.
 #define BLOB_LINE (16)
 
+void debug(const char *format, ...)
+{
+	va_list args;
+	va_start(args, format);
+
+	vprintf(format, args);
+
+	va_end(args);
+}
+
 int load_file(const char *file_name, char *buffer, const size_t buf_len,
 	size_t *bytes_loaded)
 {
