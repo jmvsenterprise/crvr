@@ -65,15 +65,17 @@ int find_param(struct param out[static 1], struct request r[static 1],
 	return 0;
 }
 
-char *header_find_value(struct request *r, const char *key)
+int header_find_value(struct request *r, const char *key, struct str *value)
 {
-	size_t i;
-	for (i = 0; i < r->header_count; ++i) {
-		if (strcmp(key, r->headers[i].key) == 0) {
-			return r->headers[i].value;
+	if (!r || !key || !value) return EINVAL;
+
+	for (long i = 0; i < r->param_count; ++i) {
+		if (str_cmp_cstr(&r->params[i].key, key) == 0) {
+			*value = r->params[i].value;
+			return 0;
 		}
 	}
-	return NULL;
+	return ENOENT;
 }
 
 void print_request(struct request *r)

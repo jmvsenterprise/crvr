@@ -8,6 +8,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
+#include <linux/limits.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -44,20 +45,21 @@ void print(struct sockaddr_in *address)
 
 static int parse_into_param(struct str *line, struct http_param *param)
 {
-	const struct str separator = ":";
+	static const struct str separator = STR(":");
 
 	if (!line || !param) return EINVAL;
 	const long sep_loc = str_find_substr(line, &separator);
 	if (sep_loc == -1) return EPROTO;
-	param->key = {line.s, sep_loc};
-	param->value = {line.s + sep_loc, line.len - sep_loc};
+	param->key = (struct str){line->s, sep_loc};
+	param->value = (struct str){line->s + sep_loc, line->len - sep_loc};
 	return 0;
 }
 
 static int add_param_to_request(struct request *r, struct http_param *param)
 {
 	if (!r || !param) return EINVAL;
-	if (r->param_count >= r->param_cap) return ENOBUFS;
+	assert(LEN(r->params) <= LONG_MAX);
+	if (r->param_count >= (long)LEN(r->params)) return ENOBUFS;
 	r->params[r->param_count] = *param;
 	r->param_count++;
 	return 0;
@@ -75,29 +77,29 @@ static int add_param_to_request(struct request *r, struct http_param *param)
  * @return Returns 0 if the header is successfully parsed. Otherwise returns an
  *         error code.
  */
-static int parse_header_options(struct str *rest_of_header, struct request *r)
+static int parse_header_options(struct str rest_of_header, struct request *r)
 {
 	int error = 0;
-	const str newline = STR("\r\n");
+	static const struct str newline = STR("\r\n");
 	struct http_param param = {0};
 
-	if (!rest_of_header || !r) {
+	if (!r) {
 		return EINVAL;
 	}
 
-	while (rest_of_header->len > 0) {
+	while (rest_of_header.len > 0) {
 		struct str line = rest_of_header;
-		long eol = str_find_substr(&line, &new_line);
+		long eol = str_find_substr(&line, &newline);
 		if (eol != -1) line.len = eol;
-		rest_of_header->s += line.len;
-		rest_of_header->len -= line.len;
+		rest_of_header.s += line.len;
+		rest_of_header.len -= line.len;
 
 		error = parse_into_param(&line, &param);
 		if (error) return error;
 		error = add_param_to_request(r, &param);
 	}
 
-	printf("Found %lu headers.\n", request->header_count);
+	printf("Found %lu headers.\n", r->param_count);
 	return 0;
 }
 
@@ -105,25 +107,22 @@ static int parse_header_options(struct str *rest_of_header, struct request *r)
  * Parse the buffer in the request. Determine if it is a POST or GET request
  * and parse its parameters storing the data in the request itself.
  */
-int parse_request_buffer(struct request *request)
+int parse_request_buffer(struct request *request, struct pool *p)
 {
-	const struct str eol = STR("\r\n");
-	const char index_page[] = "index.html";
-	const struct str space = STR(" ");
+	static const struct str eol = STR("\r\n");
+	static const struct str index_page = STR("index.html");
+	static const struct str space = STR(" ");
+	static const struct str slash_only = STR("/");
 
 	// Type, path and format are all on the first line.
-	struct str req_buf = {request->buffer, strlen(request->buffer)};
-	if (req_buf.len > LEN(buffer)) {
-		printf("request too big: %u. Forcing to %u.\n", req_buf.len,
-			LEN(buffer));
-		req_buf.len = LEN(buffer);
-	}
+	struct str req_buf = request->buffer;
 
 	long end_of_line = str_find_substr(&req_buf, &eol);
 	if (end_of_line == -1) {
 		// Uh... wut? We should have at least one EOL.
-		fprintf(stderr, "Did not find EOL in header. Header:\n%s\n",
-			request->buffer);
+		fputs("Did not find EOL in header. Header:\n", stderr);
+		str_print(stderr, &request->buffer);
+		fputs("\n", stderr);
 		return EINVAL;
 	}
 	struct str header = {req_buf.s, end_of_line};
@@ -134,7 +133,7 @@ int parse_request_buffer(struct request *request)
 		fputs("Did not find GET\\POST to path space in header. Header: \"",
 			stderr);
 		str_print(stderr, &header);
-		fputs("\"\n");
+		fputs("\"\n", stderr);
 		return EINVAL;
 	}
 	struct str req_type = {header.s, req_type_end};
@@ -147,7 +146,7 @@ int parse_request_buffer(struct request *request)
 	} else {
 		fputs("Unrecognized request type \"", stderr);
 		str_print(stderr, &req_type);
-		fputs("\"\n");
+		fputs("\"\n", stderr);
 		return EINVAL;
 	}
 
@@ -163,22 +162,23 @@ int parse_request_buffer(struct request *request)
 	path.len = path_end;
 
 	// The rest of the line is the format.
-	struct str format = {path.s + path.len, header.len - type.len -
-		path.len};
+	request->format = (struct str){
+		path.s + path.len,
+		header.len - req_type.len - path.len
+	};
 
 	// Handle some special cases for path. If it is just /, change it to
 	// just load index.html. Easiest to do this before copying it into the
 	// request.
-	const struct str index_page = STR("index.html");
 
 	if (str_cmp(&path, &slash_only) == 0) {
 		path = index_page;
 	}
 
 	// If it is a directory (ends in /) append "index.html".
-	if (path->s[path->len] == '/') {
+	if (path.s[path.len] == '/') {
 		struct str actual_path = {0};
-		long space_needed = path->len + index_path.len;
+		long space_needed = path.len + index_page.len;
 		int error = alloc_str(p, space_needed, &actual_path);
 		if (error) {
 			fprintf(stderr, "Failed to allocate actual path: %i.\n",
@@ -187,20 +187,23 @@ int parse_request_buffer(struct request *request)
 		}
 		assert(actual_path.len == space_needed);
 		assert(actual_path.len >= path.len + index_page.len);
-		(void)memcpy(actual_path.s, path.s, path.len);
+		static_assert(sizeof(size_t) >= sizeof(path.len));
+		static_assert(SIZE_MAX > LONG_MAX);
+		(void)memcpy(actual_path.s, path.s, (size_t)path.len);
 		(void)strncat(actual_path.s + actual_path.len, index_page.s,
-			index_page.len);
+			(size_t)index_page.len);
 
 		path = actual_path;
 	}
 
 	const struct str rest_of_header = {header.s + header.len,
 	       req_buf.len - header.len};
-	parse_header_options(&rest_of_header, r);
+	parse_header_options(rest_of_header, request);
 	return 0;
 }
 
-int parse_request(char *data, long data_len, struct request *request)
+int parse_request(char *data, long data_len, struct request *request,
+	struct pool *p)
 {
 	if (!data || !request || (data_len <= 0)) return EINVAL;
 
@@ -208,9 +211,13 @@ int parse_request(char *data, long data_len, struct request *request)
 
 	const struct str header_separator = STR("\r\n\r\n");
 
+	const size_t data_str_len = strlen(data);
+	if (data_str_len < (size_t)data_len) {
+		request->buffer.len = (long)data_str_len;
+	} else {
+	       	request->buffer.len = data_len;
+	}
 	request->buffer.s = data;
-	request->buffer.len = strlen(data);
-	if (req_data.len < data_len) req_data.len = data_len;
 
 	// Find the end of the header.
 	long end_of_header = str_find_substr(&request->buffer,
@@ -220,7 +227,7 @@ int parse_request(char *data, long data_len, struct request *request)
 	// need a bigger buffer.
 	if (end_of_header != -1) return ENOBUFS;
 
-	int err = parse_request_buffer(request);
+	int err = parse_request_buffer(request, p);
 	if (err) {
 		fprintf(stderr, "Failed to parse request buffer %d.\n", err);
 		return err;
@@ -236,15 +243,19 @@ int parse_request(char *data, long data_len, struct request *request)
  */
 int handle_get_request(int client, struct request *request, struct pool *p)
 {
-	printf("Getting \"%s\"\n", request->path);
-	if (strcmp(request->path, "asl.html") == 0) {
+	static const struct str ASL_PAGE = STR("asl.html");
+	printf("Getting \"");
+	str_print(stdout, &request->path);
+	printf("\"\n");
+
+	if (str_cmp(&request->path, &ASL_PAGE) == 0) {
 		printf("Dynamic URI\n");
 		return asl_get(request, client);
 	}
 	FILE *f = NULL;
 	char file_path[PATH_MAX] = {0};
 
-	int err = copy_str_to_cstr(file_path, PATH_MAX, &request->path);
+	int err = str_copy_to_cstr(&request->path, file_path, PATH_MAX);
 	if (err) return err;
 
 	f = fopen(file_path, "r");
@@ -261,9 +272,8 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 int handle_post_request(int client, struct request *r, struct pool *p,
 	size_t bytes_received)
 {
-	char *value;
-	long total_len;
-	long bytes_needed;
+	long total_len = 0;
+	long bytes_needed = 0;
 
 	(void)client;
 	(void)p;
@@ -278,8 +288,9 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	}
 	err = str_to_long(&content_len, &total_len, 10);
 	if (err) {
-		fprintf(stderr, "Failed to convert %s to long. %u.\n", value,
-			err);
+		fputs("Failed to convert \"", stderr);
+		str_print(stderr, &content_len);
+		fprintf(stderr, "\" to long. err=%u.\n", err);
 		return err;
 	}
 	if (total_len < 0) {
@@ -287,17 +298,17 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		return EINVAL;
 	}
 	printf("content length is %ld\n", total_len);
-	bytes_needed = (size_t)total_len;
+	bytes_needed = total_len;
 
 	if (bytes_needed > pool_get_remaining_capacity(p)) {
-		fprintf(stderr, "Request too big: %lu. Max: %d.\n",
+		fprintf(stderr, "Request too big: %lu. Max: %li.\n",
 			bytes_needed, pool_get_remaining_capacity(p));
 		return ENOBUFS;
 	}
 	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
 		bytes_received, bytes_needed);
 
-	alloc_str(&r->post_params_buffer, bytes_needed);
+	alloc_str(p, bytes_needed, &r->post_params_buffer);
 	long bytes_read = 0;
 	while (bytes_read < bytes_needed) {
 		// Need to update space below if this isn't the case.
@@ -316,10 +327,12 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 
 	print_request(r);
 
-	if (strcmp(r->path, "asl.html") == 0) {
-		return asl_post(r, client);
-	}
-	printf("Don't know what to do with post to %s.\n", r->path);
+	if (str_cmp_cstr(&r->path, "asl.html") == 0) return asl_post(r, client);
+
+	printf("Don't know what to do with post to \"");
+	str_print(stdout, &r->path);
+	printf("\"\n");
+
 	return 0;
 }
 
@@ -343,7 +356,7 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 
 	struct request request;
 	const long start = pool_get_position(p);
-	if (parse_request(buffer, LEN(buffer), &request) != 0) {
+	if (parse_request(buffer, LEN(buffer), &request, p) != 0) {
 		fprintf(stderr,
 			"Failed to parse client's request.\nBuffer was:\n%s\n",
 			buffer);

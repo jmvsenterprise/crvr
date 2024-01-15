@@ -43,7 +43,7 @@ int pool_init(struct pool *p, unsigned long desired_size);
  *
  * @return Returns the space left in p. Returns -1 if p is NULL.
  */
-long pool_get_remaining_capacity(struct pool *p)
+long pool_get_remaining_capacity(struct pool *p);
 
 /*
  * Free all memory allocated to the pool.
@@ -158,9 +158,7 @@ void *pool_alloc(struct pool *p, long byte_amount)
 {
 	unsigned long alignment = sizeof(void*) - byte_amount % sizeof(void*);
 	byte_amount += alignment;
-	if ((p->offset + byte_amount) > p->cap) {
-		return NULL;
-	}
+	if ((p->offset + byte_amount) > p->cap) return NULL;
 	assert(p->buffer);
 	void *allocation = (void*)(p->buffer + p->offset);
 	p->offset += byte_amount;

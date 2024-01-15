@@ -15,6 +15,7 @@
 #define BASE_STR_H
 
 #include <stdio.h>
+#include <limits.h>
 
 struct pool;
 
@@ -77,7 +78,7 @@ int str_print(FILE *f, const struct str *s);
  *
  * @return Returns 0 if successful, otherwise returns an error code.
  */
-int alloc_str(struct pool *p, const unsigned long space_needed, struct str *s);
+int alloc_str(struct pool *p, const long space_needed, struct str *s);
 
 /**
  * @brief Copies the c-string into an str.
@@ -96,6 +97,31 @@ int alloc_str(struct pool *p, const unsigned long space_needed, struct str *s);
 int alloc_from_str(struct pool *p, const char *cstr, const long len,
 	struct str *s);
 
+/**
+ * @brief Converts the contents of an str to a long.
+ *
+ * @param[in] s - The str to attempt to convert.
+ * @param[out] l - The location to store the long values.
+ * @param[in] base - The base to use when converting the string representation
+ *                   to the number.
+ *
+ * @return Returns 0 if the conversion was successful and l is populated.
+ *         Otherwise returns an error code.
+ */
+int str_to_long(const struct str *s, long *l, long base);
+
+/**
+ * @brief Copies the str data into a c-string.
+ *
+ * @param[in] s - The str to copy data from.
+ * @param[out] dest - The pre-allocated character array to save data to.
+ * @param[in] dest_len - The length of the array at dest, which will be checked
+ *                       to avoid exceeding the buffer length.
+ *
+ * @return Returns 0 if the data was successfully copied. Otherwise returns an
+ *         error code.
+ */
+int str_copy_to_cstr(const struct str *s, char *dest, long dest_len);
 
 #ifdef DEFINE_STR
 
@@ -104,33 +130,26 @@ int alloc_from_str(struct pool *p, const char *cstr, const long len,
 
 int str_cmp(const struct str *a, const struct str *b)
 {
-  if (a == b)
-    return 0;
-  for (long i = 0; i < a->len; ++i) {
-    for (long j = 0; j < b->len; ++j) {
-      if (a->s[i] < b->s[i]) {
-        return -1;
-      } else if (a->s[i] > b->s[i]) {
-        return 1;
-      }
-    }
-  }
-  return 0;
+	if (a == b) return 0;
+	for (long i = 0; i < a->len; ++i) {
+		for (long j = 0; j < b->len; ++j) {
+			if (a->s[i] < b->s[i]) return -1;
+			if (a->s[i] > b->s[i]) return 1;
+		}
+	}
+	return 0;
 }
 
 int str_cmp_cstr(const struct str *s, const char *cs)
 {
-  const size_t len = strlen(cs);
-  for (long i = 0; i < s->len; ++i) {
-    for (size_t j = 0; j < len; ++j) {
-      if (s->s[i] < cs[j]) {
-        return -1;
-      } else if (s->s[i] > cs[j]) {
-        return 1;
-      }
-    }
-  }
-  return 0;
+	const size_t len = strlen(cs);
+	for (long i = 0; i < s->len; ++i) {
+		for (size_t j = 0; j < len; ++j) {
+			if (s->s[i] < cs[j]) return -1;
+			if (s->s[i] > cs[j]) return 1;
+		}
+	}
+	return 0;
 }
 
 /*
@@ -151,31 +170,26 @@ long str_find_substr(const struct str *haystack, const struct str *needle)
 				break;
 			}
 		}
-		if (found) {
-			return i;
-		}
+		if (found) return i;
 	}
 	return -1;
 }
 
 int str_print(FILE *f, const struct str *s)
 {
-  const char end = s->s[s->len];
-  s->s[s->len] = '\0';
-  int result = fputs(s->s, f);
-  s->s[s->len] = end;
-  return result;
+	const char end = s->s[s->len];
+	s->s[s->len] = '\0';
+	int result = fputs(s->s, f);
+	s->s[s->len] = end;
+	return result;
 }
 
 int alloc_str(struct pool *p, const long space_needed, struct str *s)
 {
-	if (!p || !s || (space_needed == 0)) {
-		return EINVAL;
-	}
+	if (!p || !s || (space_needed <= 0)) return EINVAL;
+
 	s->s = pool_alloc(p, space_needed);
-	if (!s->s) {
-		return ENOMEM;
-	}
+	if (!s->s) return ENOMEM;
 	s->len = space_needed;
 	return 0;
 }
@@ -183,11 +197,38 @@ int alloc_str(struct pool *p, const long space_needed, struct str *s)
 int alloc_from_str(struct pool *p, const char *cstr, const long len,
 	struct str *s)
 {
-	int alloc_error = alloc_str(p, len, s);
-	if (alloc_error) {
-		return alloc_error;
-	}
+	int err = alloc_str(p, len, s);
+	if (err) return err;
 	(void)memcpy(s->s, cstr, s->len);
+	return 0;
+}
+
+#define LONG_9 ((long)'9' - (long)'0');
+
+int str_to_long(const struct str *s, long *l, long base)
+{
+	if (!s || !l || (base <= 0)) return EINVAL;
+
+	const double max_value = round(powf((double)base, (double)s->len));
+	if (max_value > (double)LONG_MAX) return ERANGE;
+	long value = 0;
+	long c = 0;
+	for (long i = 0; i < s->len; ++i) {
+		c = s->s[i];
+		c -= '0';
+		if (c > LONG_9) return ERANGE;
+		value *= base;
+		value += c;
+	}
+}
+
+int str_copy_to_cstr(const struct str *s, char *dest, long dest_len)
+{
+	if (!s || !dest || (dest_len <= 0)) return EINVAL;
+	if (s->len >= dest_len) return ENOSPC;
+
+	memcpy(dest, s->s, s->len);
+	dest[s->len + 1] = 0;
 	return 0;
 }
 
