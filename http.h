@@ -56,17 +56,18 @@ struct request {
  */
 extern const char ok_header[];
 
-/*
- * Searches for a parameter in the http request.
+/**
+ * @brief Searches for a parameter in the http request.
  *
- * out - The location to save the parameter data when found.
- * r - The request to search through.
- * param_name - The name of the parameter to look for.
+ * @param[out] out - The location to save the parameter data when found.
+ * @param[in] r - The request to search through.
+ * @param[in] param_name - The name of the parameter to look for.
  *
- * Returns zero if the parameter was found, or an error code otherwise.
+ * @return Returns zero if the parameter was found or ENOENT if it wasn't
+ *         found. Returns an error code on error.
  */
-int find_param(struct http_param *out, struct request *r,
-	const char *param_name);
+int find_param(const struct request *r, const char *param_name,
+	struct http_param *out);
 
 /**
  * @brief Lookup a header parameter in the request.

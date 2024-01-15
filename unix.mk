@@ -12,5 +12,5 @@ CXXFLAGS=$(BUILD) -std=c++17
 CFLAGS=$(BUILD) -std=c17 -Ibase
 
 LDFLAGS=$(SANITIZERS)
-LDLIBS=
+LDLIBS=-lm
 RM=rm -f

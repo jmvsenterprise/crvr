@@ -5,6 +5,7 @@
  */
 #include "http.h"
 
+#include <assert.h>
 #include <errno.h>
 #include <stdlib.h>
 #include <string.h>
@@ -14,55 +15,20 @@
 
 const char ok_header[] = "HTTP/1.1 200 OK";
 
-int find_param(struct param out[static 1], struct request r[static 1],
-	const char *param_name)
+int find_param(const struct request *r, const char *param_name,
+	struct http_param *out)
 {
-	*out = (struct param){0};
+	if (!out || !r || !param_name) return EINVAL;
 
-	if (!param_name)
-		return EINVAL;
-	char *param = strstr(r->parameters, param_name);
-	if (!param) {
-		printf("Did not find %s in parameters.\n", param_name);
-		return EINVAL;
-	}
-
-	printf("param: \"%s\"\n", param);
-
-	size_t param_name_len = strlen(param_name);
-	(void)strncpy(out->name, param_name, param_name_len);
-
-	param += param_name_len;
-	printf("after name param: \"%s\"\n", param);
-	if ('=' != *param) {
-		printf("Param is not '=': \"%c\" (0x%hhx)\n", *param, *param);
-		return EINVAL;
-	}
-	param += sizeof((char)'=');
-	printf("after = param: \"%s\"\n", param);
-
-	/*
-	 * Look for a \r\n or \0. If either one is encountered that's the end
-	 * of the parameter value.
-	 */
-	size_t value_end = 0;
-	printf("Checking param: ");
-	for (; param[value_end]; ++value_end) {
-		printf("'%c', ", param[value_end]);
-		if (('\n' == param[value_end]) && (value_end > 0) &&
-				(param[value_end - 1] == '\r')) {
-			value_end -= (sizeof((char)'\r') + sizeof((char)'\n'));
-			break;
+	static_assert(SIZE_MAX > LONG_MAX);
+	assert((size_t)r->param_count < LEN(r->params));
+	for (long i = 0; i < r->param_count; ++i) {
+		if (str_cmp_cstr(&r->params[i].key, param_name) == 0) {
+			*out = r->params[i];
+			return 0;
 		}
 	}
-	printf("\n");
-
-	for (size_t i = 0; i < value_end; ++i) {
-		out->value[i] = param[i];
-	}
-	printf("param %s:%s.\n", out->name, out->value);
-
-	return 0;
+	return ENOENT;
 }
 
 int header_find_value(struct request *r, const char *key, struct str *value)
@@ -81,7 +47,6 @@ int header_find_value(struct request *r, const char *key, struct str *value)
 void print_request(struct request *r)
 {
 	const char *type_str = NULL;
-	size_t i;
 
 	if (r->type == GET) {
 		type_str = "GET";
@@ -92,17 +57,21 @@ void print_request(struct request *r)
 	}
 	printf("Request:\n"
 		"Type: %s\n"
-		"Path: %s\n"
-		"Format: %s\n"
-		"Headers:\n",
-		type_str, r->path, r->format);
-	for (i = 0; i < r->header_count; ++i) {
-		printf("\t%s: %s\n", r->headers[i].key, r->headers[i].value);
-	}
-	if (r->parameters) {
+		"Path: ", type_str);
+	str_print(stdout, &r->path);
+	puts("\nFormat: ");
+	str_print(stdout, &r->format);
+	puts("\n");
+	if (r->param_count > 0) {
 		printf("Parameters:\n"
 		       "-----------\n");
-		print_blob(r->parameters, r->param_len, 20);	
+		for (long i = 0; i < r->param_count; ++i) {
+			printf("%li: ", i);
+			str_print(stdout, &r->params[i].key);
+			puts(":");
+			str_print(stdout, &r->params[i].value);
+			puts("\n");
+		}
 		printf("-----------\n");
 	}
 }

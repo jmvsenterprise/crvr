@@ -14,8 +14,9 @@
 #ifndef BASE_STR_H
 #define BASE_STR_H
 
-#include <stdio.h>
+#include <math.h>
 #include <limits.h>
+#include <stdio.h>
 
 struct pool;
 
@@ -78,7 +79,7 @@ int str_print(FILE *f, const struct str *s);
  *
  * @return Returns 0 if successful, otherwise returns an error code.
  */
-int alloc_str(struct pool *p, const long space_needed, struct str *s);
+int str_alloc(struct pool *p, const long space_needed, struct str *s);
 
 /**
  * @brief Copies the c-string into an str.
@@ -94,7 +95,7 @@ int alloc_str(struct pool *p, const long space_needed, struct str *s);
  * @return Returns 0 if the data was copied to the pool and the str was updated.
  *         Otherwise returns an error code.
  */
-int alloc_from_str(struct pool *p, const char *cstr, const long len,
+int str_alloc_from_cstr(struct pool *p, const char *cstr, const long len,
 	struct str *s);
 
 /**
@@ -127,6 +128,8 @@ int str_copy_to_cstr(const struct str *s, char *dest, long dest_len);
 
 #include <string.h>
 #include "pool.h"
+
+#define LONG_9 ((long)'9' - (long)'0')
 
 int str_cmp(const struct str *a, const struct str *b)
 {
@@ -184,7 +187,7 @@ int str_print(FILE *f, const struct str *s)
 	return result;
 }
 
-int alloc_str(struct pool *p, const long space_needed, struct str *s)
+int str_alloc(struct pool *p, const long space_needed, struct str *s)
 {
 	if (!p || !s || (space_needed <= 0)) return EINVAL;
 
@@ -194,22 +197,22 @@ int alloc_str(struct pool *p, const long space_needed, struct str *s)
 	return 0;
 }
 
-int alloc_from_str(struct pool *p, const char *cstr, const long len,
+int str_alloc_from_cstr(struct pool *p, const char *cstr, const long len,
 	struct str *s)
 {
-	int err = alloc_str(p, len, s);
+	int err = str_alloc(p, len, s);
 	if (err) return err;
-	(void)memcpy(s->s, cstr, s->len);
+	assert(s->len > 0);
+	(void)memcpy(s->s, cstr, (size_t)s->len);
 	return 0;
 }
 
-#define LONG_9 ((long)'9' - (long)'0');
 
 int str_to_long(const struct str *s, long *l, long base)
 {
 	if (!s || !l || (base <= 0)) return EINVAL;
 
-	const double max_value = round(powf((double)base, (double)s->len));
+	const double max_value = round(pow((double)base, (double)s->len));
 	if (max_value > (double)LONG_MAX) return ERANGE;
 	long value = 0;
 	long c = 0;
@@ -220,6 +223,7 @@ int str_to_long(const struct str *s, long *l, long base)
 		value *= base;
 		value += c;
 	}
+	return 0;
 }
 
 int str_copy_to_cstr(const struct str *s, char *dest, long dest_len)
@@ -227,7 +231,8 @@ int str_copy_to_cstr(const struct str *s, char *dest, long dest_len)
 	if (!s || !dest || (dest_len <= 0)) return EINVAL;
 	if (s->len >= dest_len) return ENOSPC;
 
-	memcpy(dest, s->s, s->len);
+	assert(s->len > 0);
+	memcpy(dest, s->s, (size_t)s->len);
 	dest[s->len + 1] = 0;
 	return 0;
 }

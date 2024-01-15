@@ -34,7 +34,7 @@ struct pool {
  * Returns 0 if the pool, p, was successfully initialized to the desired
  * size. Otherwise returns an error code.
  */
-int pool_init(struct pool *p, unsigned long desired_size);
+int pool_init(struct pool *p, long desired_size);
 
 /**
  * @brief Return the number of unused bytes in the pool.
@@ -132,7 +132,7 @@ int pool_reset(struct pool *p, long offset);
 #include <errno.h>
 #include <stdlib.h>
 
-int pool_init(struct pool *p, unsigned long desired_size)
+int pool_init(struct pool *p, const long desired_size)
 {
 	assert(p && (p->buffer == NULL));
 	p->offset = 0;
@@ -156,7 +156,8 @@ void pool_free(struct pool *p)
 
 void *pool_alloc(struct pool *p, long byte_amount)
 {
-	unsigned long alignment = sizeof(void*) - byte_amount % sizeof(void*);
+	long alignment = (long)sizeof(void*) - byte_amount %
+		(long)sizeof(void*);
 	byte_amount += alignment;
 	if ((p->offset + byte_amount) > p->cap) return NULL;
 	assert(p->buffer);

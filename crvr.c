@@ -179,7 +179,7 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	if (path.s[path.len] == '/') {
 		struct str actual_path = {0};
 		long space_needed = path.len + index_page.len;
-		int error = alloc_str(p, space_needed, &actual_path);
+		int error = str_alloc(p, space_needed, &actual_path);
 		if (error) {
 			fprintf(stderr, "Failed to allocate actual path: %i.\n",
 				error);
@@ -308,7 +308,7 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
 		bytes_received, bytes_needed);
 
-	alloc_str(p, bytes_needed, &r->post_params_buffer);
+	str_alloc(p, bytes_needed, &r->post_params_buffer);
 	long bytes_read = 0;
 	while (bytes_read < bytes_needed) {
 		// Need to update space below if this isn't the case.
