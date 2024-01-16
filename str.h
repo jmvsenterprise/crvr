@@ -18,6 +18,9 @@
 #include <limits.h>
 #include <stdio.h>
 
+/// The End Of the STR. Used for getting substrings.
+#define EOSTR (-1)
+
 struct pool;
 
 struct str {
@@ -60,6 +63,25 @@ int str_cmp_cstr(const struct str *s, const char *cs);
  * Returns the index where needle starts, or -1 if needle wasn't found.
  */
 long str_find_substr(const struct str *haystack, const struct str *needle);
+
+/**
+ * @brief Get a substring from an str.
+ *
+ * Its error prone to extract a substring manually from an str, so this is a
+ * helper function to do that.
+ *
+ * @param[in] original - The original str to pull the substring from.
+ * @param[in] start - The location to start the substring.
+ * @param[in] end - The location to end the substring. If this is EOSTR, then
+ *                  the remaining length of original after start will be
+ *                  included in the substr.
+ * @param[out] substr - The location to store the substr.
+ *
+ * @return Returns 0 if the substr was extracted successfully. Otherwise returns
+ *         and error code.
+ */
+int str_get_substr(const struct str *original, const long start, const long end,
+	struct str *substr)
 
 /*
  * Prints the str to the provided file.
@@ -193,6 +215,24 @@ long str_find_substr(const struct str *haystack, const struct str *needle)
 		if (found) return i;
 	}
 	return -1;
+}
+
+int str_get_substr(const struct str *original, const long start, const long end,
+	struct str *substr)
+{
+	if (!original || (start <= 0) || (start > original->len) ||
+		(end <= 0) || (end < start) || (end > original->len) ||
+		!substr)
+	{
+		return EINVAL;
+	}
+
+	substr->s = original->s + start;
+	substr->len = original->len - start;
+	if (end != EOSTR) {
+		substr->len -= end;
+	}
+	return 0;
 }
 
 int str_print(FILE *f, const struct str *s)

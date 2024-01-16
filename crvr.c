@@ -49,7 +49,10 @@ static int parse_into_param(struct str *line, struct http_param *param)
 
 	if (!line || !param) return EINVAL;
 	const long sep_loc = str_find_substr(line, &separator);
-	if (sep_loc == -1) return EPROTO;
+	if (sep_loc == -1) {
+		DEBUG("%s:%i: %i\n", __FILE__, __LINE__, EPROTO);
+		return EPROTO;
+	}
 	param->key = (struct str){line->s, sep_loc};
 	param->value = (struct str){line->s + sep_loc, line->len - sep_loc};
 	return 0;
@@ -128,7 +131,12 @@ int parse_request_buffer(struct request *request, struct pool *p)
 		fputs("\n", stderr);
 		return EINVAL;
 	}
-	struct str header = {req_buf.s, end_of_line};
+	struct str header;
+	int err = str_get_substr(&req_buf, end_of_line, EOSTR, &header);
+	if (err) {
+		fprintf("Failed to substr the header: %i\n", err);
+		return err;
+	}
 
 	// Find the space between GET\POST and the path.
 	long req_type_end = str_find_substr(&header, &space);
@@ -139,7 +147,12 @@ int parse_request_buffer(struct request *request, struct pool *p)
 		fputs("\"\n", stderr);
 		return EINVAL;
 	}
-	struct str req_type = {header.s, req_type_end};
+	struct str req_type;
+	err = str_get_substr(&header, req_type_end, &req_type);
+	if (err) {
+		fprintf("Failed to substr request type: %i\n", err);
+		return err;
+	}
 
 	// Figure out the request type from the string.
 	if (str_cmp_cstr(&req_type, "GET") == 0) {
@@ -154,10 +167,12 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	}
 
 	// Now lets get the path.
-	request->path = (struct str){
-		header.s + req_type.len + 1,
-		header.len - req_type.len - 1
-	};
+	err = str_get_substr(&header, req_type_end + space.len, EOSTR,
+		&request->path);
+	if (err) {
+		fprintf("Failed to substr path: %i\n", err);
+		return err;
+	}
 	long path_end = str_find_substr(&request->path, &space);
 	if (path_end == -1) {
 		fprintf(stderr, "Failed to find path end: \"");
@@ -168,15 +183,16 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	request->path.len = path_end;
 
 	// The rest of the line is the format.
-	request->format = (struct str){
-		request->path.s + request->path.len + 1,
-		header.len - req_type.len - request->path.len - 1
-	};
+	err = str_get_substr(&header, path_end + space.len, EOSTR,
+		&request->format);
+	if (err) {
+		fprintf("Failed to substr format: %i\n", err);
+		return err;
+	}
 
 	// Handle some special cases for path. If it is just /, change it to
 	// just load index.html. Easiest to do this before copying it into the
 	// request.
-
 	if (str_cmp(&request->path, &slash_only) == 0) {
 		request->path = index_page;
 	}
@@ -203,10 +219,13 @@ int parse_request_buffer(struct request *request, struct pool *p)
 		request->path = actual_path;
 	}
 
-	const struct str rest_of_header = {
-		header.s + header.len + eol.len,
-		req_buf.len - header.len - eol.len
-	};
+	struct str rest_of_header;
+	err = str_get_substr(&req_buf, header.len + eol.len, EOSTR,
+		&rest_of_header);
+	if (err) {
+		fprintf("Failed to substr rest of header: %i\n", err);
+		return err;
+	}
 	parse_header_options(rest_of_header, request);
 	return 0;
 }
