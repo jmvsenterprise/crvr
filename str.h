@@ -81,7 +81,7 @@ long str_find_substr(const struct str *haystack, const struct str *needle);
  *         and error code.
  */
 int str_get_substr(const struct str *original, const long start, const long end,
-	struct str *substr)
+	struct str *substr);
 
 /*
  * Prints the str to the provided file.

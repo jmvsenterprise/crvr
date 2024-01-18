@@ -134,7 +134,7 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	struct str header;
 	int err = str_get_substr(&req_buf, end_of_line, EOSTR, &header);
 	if (err) {
-		fprintf("Failed to substr the header: %i\n", err);
+		fprintf(stderr, "Failed to substr the header: %i\n", err);
 		return err;
 	}
 
@@ -148,9 +148,9 @@ int parse_request_buffer(struct request *request, struct pool *p)
 		return EINVAL;
 	}
 	struct str req_type;
-	err = str_get_substr(&header, req_type_end, &req_type);
+	err = str_get_substr(&header, req_type_end, EOSTR, &req_type);
 	if (err) {
-		fprintf("Failed to substr request type: %i\n", err);
+		fprintf(stderr, "Failed to substr request type: %i\n", err);
 		return err;
 	}
 
@@ -170,7 +170,7 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	err = str_get_substr(&header, req_type_end + space.len, EOSTR,
 		&request->path);
 	if (err) {
-		fprintf("Failed to substr path: %i\n", err);
+		fprintf(stderr, "Failed to substr path: %i\n", err);
 		return err;
 	}
 	long path_end = str_find_substr(&request->path, &space);
@@ -186,7 +186,7 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	err = str_get_substr(&header, path_end + space.len, EOSTR,
 		&request->format);
 	if (err) {
-		fprintf("Failed to substr format: %i\n", err);
+		fprintf(stderr, "Failed to substr format: %i\n", err);
 		return err;
 	}
 
@@ -223,7 +223,7 @@ int parse_request_buffer(struct request *request, struct pool *p)
 	err = str_get_substr(&req_buf, header.len + eol.len, EOSTR,
 		&rest_of_header);
 	if (err) {
-		fprintf("Failed to substr rest of header: %i\n", err);
+		fprintf(stderr, "Failed to substr rest of header: %i\n", err);
 		return err;
 	}
 	parse_header_options(rest_of_header, request);
