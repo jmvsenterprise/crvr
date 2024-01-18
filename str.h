@@ -220,18 +220,20 @@ long str_find_substr(const struct str *haystack, const struct str *needle)
 int str_get_substr(const struct str *original, const long start, const long end,
 	struct str *substr)
 {
-	if (!original || (start <= 0) || (start > original->len) ||
-		(end <= 0) || (end < start) || (end > original->len) ||
-		!substr)
+	if (!original || (start < 0) || (start > original->len) || !substr) {
+		return EINVAL;
+	}
+	// end can be EOSTR, but if it isn't it needs to be valid.
+	if ((end != EOSTR) && ((end < 0) || (end < start) ||
+		(end > original->len)))
 	{
 		return EINVAL;
 	}
-
 	substr->s = original->s + start;
-	substr->len = original->len - start;
-	if (end != EOSTR) {
-		substr->len -= end;
-	}
+	if (end == EOSTR)
+		substr->len = original->len - start;
+	else
+		substr->len = end - start;
 	return 0;
 }
 
