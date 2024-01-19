@@ -48,6 +48,7 @@ static int parse_into_param(struct str *line, struct http_param *param)
 	static const struct str separator = STR(": ");
 
 	if (!line || !param) return EINVAL;
+	if (line->len == 0) return EINVAL;
 	const long sep_location = str_find_substr(line, &separator);
 	if (sep_location == -1) {
 		fputs("Failed to find separator for \"", stderr);
@@ -110,7 +111,9 @@ static int parse_header_options(struct str rest_of_header, struct request *r)
 		return EINVAL;
 	}
 
-	while (rest_of_header.len > 0) {
+	while ((rest_of_header.len > 0) && (r->param_count <
+		(long)LEN(r->params)))
+	{
 		long eol = str_find_substr(&rest_of_header, &newline);
 		struct str line;
 		int err = str_get_substr(&rest_of_header, 0, eol, &line);
@@ -145,6 +148,7 @@ static int parse_header_options(struct str rest_of_header, struct request *r)
 int parse_request_buffer(struct request *request, struct pool *p)
 {
 	static const struct str eol = STR("\r\n");
+	static const struct str header_end = STR("\r\n\r\n");
 	static const struct str index_page = STR("index.html");
 	static const struct str space = STR(" ");
 	static const struct str slash_only = STR("/");
@@ -248,8 +252,9 @@ int parse_request_buffer(struct request *request, struct pool *p)
 		request->path = actual_path;
 	}
 
+	long eoh = str_find_substr(&req_buf, &header_end);
 	struct str rest_of_header;
-	err = str_get_substr(&req_buf, header.len + eol.len, EOSTR,
+	err = str_get_substr(&req_buf, header.len + eol.len, eoh,
 		&rest_of_header);
 	if (err) {
 		fprintf(stderr, "Failed to substr rest of header: %i\n", err);
