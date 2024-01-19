@@ -45,16 +45,33 @@ void print(struct sockaddr_in *address)
 
 static int parse_into_param(struct str *line, struct http_param *param)
 {
-	static const struct str separator = STR(":");
+	static const struct str separator = STR(": ");
 
 	if (!line || !param) return EINVAL;
-	const long sep_loc = str_find_substr(line, &separator);
-	if (sep_loc == -1) {
-		DEBUG("%s:%i: %i\n", __FILE__, __LINE__, EPROTO);
+	const long sep_location = str_find_substr(line, &separator);
+	if (sep_location == -1) {
+		fputs("Failed to find separator for \"", stderr);
+		str_print(stderr, line);
+		fputs("\"\n", stderr);
 		return EPROTO;
 	}
-	param->key = (struct str){line->s, sep_loc};
-	param->value = (struct str){line->s + sep_loc, line->len - sep_loc};
+	int err = str_get_substr(line, 0, sep_location, &param->key);
+	if (err) {
+		fprintf(stderr, "Failed to get key from [0, %li] in \"",
+			sep_location);
+		str_print(stderr, line);
+		fprintf(stderr, "\": %i\n", err);
+		return err;
+	}
+	const long value_start = sep_location + separator.len;
+	err = str_get_substr(line, value_start, EOSTR, &param->value);
+	if (err) {
+		fprintf(stderr, "Failed to get value from [%li, -1] in \"",
+			value_start);
+		str_print(stderr, line);
+		fprintf(stderr, "\": %i\n", err);
+		return err;
+	}
 	return 0;
 }
 
@@ -94,14 +111,26 @@ static int parse_header_options(struct str rest_of_header, struct request *r)
 	}
 
 	while (rest_of_header.len > 0) {
-		struct str line = rest_of_header;
-		long eol = str_find_substr(&line, &newline);
-		if (eol != -1) line.len = eol;
-		rest_of_header.s += line.len;
-		rest_of_header.len -= line.len;
+		long eol = str_find_substr(&rest_of_header, &newline);
+		struct str line;
+		int err = str_get_substr(&rest_of_header, 0, eol, &line);
+		if (err) {
+			fputs("Failed to get line from \"", stderr);
+			str_print(stderr, &rest_of_header);
+			fprintf(stderr, "\": %i\n", err);
+			return err;
+		}
+
+		rest_of_header.s += line.len + newline.len;
+		rest_of_header.len -= line.len + newline.len;
 
 		error = parse_into_param(&line, &param);
-		if (error) return error;
+		if (error) {
+			fputs("Failed to parse param \"", stderr);
+			str_print(stderr, &line);
+			fprintf(stderr, "\": %i\n", error);
+			return error;
+		}
 		error = add_param_to_request(r, &param);
 	}
 
