@@ -147,16 +147,15 @@ int asl_post(struct request *r, int client)
 	static const struct str good_btn = STR("good");
 	static const struct str great_btn = STR("great");
 
-	for (long i = 0; i < r->header_count; ++i) {
-		printf("param %li=", i);
-		str_print(stdout, &r->headers[i].key);
-		puts("=");
-		str_print(stdout, &r->headers[i].value);
-		puts("\n");
+	int err = parse_post_parameters(r);
+	if (err) {
+		fprintf(stderr, "%s> Failed to parse post params: %i\n",
+			__func__, err);
+		return err;
 	}
 
 	struct http_param button = {0};
-	if (find_param(r, "button", &button) != 0) {
+	if (find_post_param(r, "button", &button) != 0) {
 		// No button param!
 		perror("No button param in parameters.\n");
 		return EINVAL;

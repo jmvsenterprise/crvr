@@ -16,31 +16,30 @@
 #define PARAM_NAME_MAX 256
 // The max value of an HTTP parameter.
 #define PARAM_VALUE_MAX 1024
+// The maximum number of header parameters that can be processed in a request.
+#define MAX_HEADER_LINES 32
+// The maximum number of post parameters that can be processed in a reqest.
+#define MAX_POST_PARAMS 32
 
-/*
- * The supported HTTP request types.
+/**
+ * @brief The supported HTTP request types.
  */
 enum request_type {
 	GET,
 	POST
 };
 
-/*
- * An HTTP request.
+/**
+ * @brief An HTTP parameter.
  */
-#define MAX_HEADER_LINES (20)
-
 struct http_param {
 	struct str key;
 	struct str value;
 };
 
-struct post_param {
-	struct str key;
-	struct str value;
-	struct post_param *next;
-};
-
+/**
+ * @brief An HTTP request that is sent to and from a client.
+ */
 struct request {
 	enum request_type type;
 	struct str path;
@@ -49,6 +48,8 @@ struct request {
 	struct http_param headers[MAX_HEADER_LINES];
 	struct str buffer;
 	struct str post_params_buffer;
+	long post_param_count;
+	struct http_param post_params[MAX_POST_PARAMS]; 
 };
 
 /*
@@ -70,6 +71,19 @@ int find_param(const struct request *r, const char *param_name,
 	struct http_param *out);
 
 /**
+ * @brief Searches the POST params in the request.
+ *
+ * @param[in] r - The request to search.
+ * @param[in] param_name - The name of the parameter to search for.
+ * @param[out] out - A location to store the parameter key and value.
+ *
+ * @return Returns 0 if the parameter was found or ENOENT if it wasn't found.
+ *         Returns an error code on error.
+ */
+int find_post_param(const struct request *r, const char *param_name,
+	struct http_param *out);
+
+/**
  * @brief Lookup a header parameter in the request.
  *
  * @param[in] r - The request to search.
@@ -81,6 +95,39 @@ int find_param(const struct request *r, const char *param_name,
  *         code.
  */
 int header_find_value(struct request *r, const char *key, struct str *value);
+
+/**
+ * @brief Parse the buffer into an http request.
+ *
+ * @param[in] data - The buffer to parse.
+ * @param[in] data_len - The length of the buffer at data.
+ * @param[out] request - The location to store the request data at.
+ * @param[in] p - A pool to use for allocations.
+ *
+ * @return Returns 0 if the buffer was successfully parsed into a request.
+ *         Otherwise an error code is returned.
+ */
+int parse_request(char *data, long data_len, struct request *request,
+	struct pool *p);
+
+/**
+ * @brief Set up the post_params array from the post_params_buffer.
+ *
+ * The crvr routines hand a POST request to submodules without parsing the post
+ * parameters (key=value) because it doesn't want to make assumptions about
+ * what the modules might have in their requests. Instead it will populate the
+ * request's post_params_buffer.
+ *
+ * This function does a generic parse of the request's post_params_buffer
+ * looking for key=value pairs and storing each one in the request's post_params
+ * array. Then a module can call find_post_param to look up each param as
+ * needed.
+ *
+ * @param[in] r - The request to parse the POST params for.
+ *
+ * @return Returns 0 if no error occurs. Otherwise returns an error code.
+ */
+int parse_post_parameters(struct request *r);
 
 /*
  * Prints a HTTP request for debugging.
