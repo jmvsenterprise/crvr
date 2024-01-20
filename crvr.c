@@ -27,6 +27,10 @@
 
 // Default port for the webserver
 static const unsigned short port = 8080;
+static const struct str s_index_page = STR("index.html");
+
+// Local functions
+static int modify_path(struct request *r, struct pool *p);
 
 /*
  * Prints the address in a sockaddr_in.
@@ -149,9 +153,7 @@ int parse_request_buffer(struct request *request, struct pool *p)
 {
 	static const struct str eol = STR("\r\n");
 	static const struct str header_end = STR("\r\n\r\n");
-	static const struct str index_page = STR("index.html");
 	static const struct str space = STR(" ");
-	static const struct str slash_only = STR("/");
 
 	// Type, path and format are all on the first line.
 	struct str req_buf = request->buffer;
@@ -223,33 +225,11 @@ int parse_request_buffer(struct request *request, struct pool *p)
 		return err;
 	}
 
-	// Handle some special cases for path. If it is just /, change it to
-	// just load index.html. Easiest to do this before copying it into the
-	// request.
-	if (str_cmp(&request->path, &slash_only) == 0) {
-		request->path = index_page;
-	}
-
-	// If it is a directory (ends in /) append "index.html".
-	if (request->path.s[request->path.len] == '/') {
-		struct str actual_path = {0};
-		long space_needed = request->path.len + index_page.len;
-		int error = str_alloc(p, space_needed, &actual_path);
-		if (error) {
-			fprintf(stderr, "Failed to allocate actual path: %i.\n",
-				error);
-			return EINVAL;
-		}
-		assert(actual_path.len == space_needed);
-		assert(actual_path.len >= request->path.len + index_page.len);
-		static_assert(sizeof(size_t) >= sizeof(request->path.len));
-		static_assert(SIZE_MAX > LONG_MAX);
-		(void)memcpy(actual_path.s, request->path.s,
-			(size_t)request->path.len);
-		(void)strncat(actual_path.s + actual_path.len, index_page.s,
-			(size_t)index_page.len);
-
-		request->path = actual_path;
+	err = modify_path(request, p);
+	if (err) {
+		fprintf(stderr, "%s> failed to modify path: %i\n", __func__,
+			err);
+		return err;
 	}
 
 	long eoh = str_find_substr(&req_buf, &header_end);
@@ -531,4 +511,56 @@ int main()
 
 	cleanup_socket_layer();
 	return result;
+}
+
+/**
+ * @brief Handle some special cases for the path.
+ *
+ * This function handles redirecting a request if its path meets certain
+ * conditions. Like / should redirect to index.html, /blah should redirect to
+ * just blah, etc.
+ *
+ * @param[in] path - The path to check.
+ *
+ * @return Returns 0 unless an error occurs.
+ */
+static int modify_path(struct request *r, struct pool *p)
+{
+	if (!r) return EINVAL;
+
+	// Remove the leading /. Prevent stinkers sending ///////...
+	while ((r->path.len > 0) && (r->path.s[0] == '/')) {
+		r->path.len--;
+		r->path.s++;
+	}
+
+	// If the path is empty, change it to load index.html.
+	if (r->path.len == 0) {
+		r->path = s_index_page;
+	}
+
+	// If the path is a directory (ends in /) append "index.html".
+	if (r->path.s[r->path.len] == '/') {
+		struct str actual_path = {0};
+		// Note... could just have a PATH_MAX buffer in the request
+		// instead of bothering with dynamic allocation...
+		long space_needed = r->path.len + s_index_page.len;
+		int error = str_alloc(p, space_needed, &actual_path);
+		if (error) {
+			fprintf(stderr, "Failed to allocate actual path: %i.\n",
+				error);
+			return EINVAL;
+		}
+		assert(actual_path.len == space_needed);
+		assert(actual_path.len >= r->path.len + s_index_page.len);
+		static_assert(sizeof(size_t) >= sizeof(r->path.len));
+		static_assert(SIZE_MAX > LONG_MAX);
+		(void)memcpy(actual_path.s, r->path.s,
+			(size_t)r->path.len);
+		(void)strncat(actual_path.s + actual_path.len, s_index_page.s,
+			(size_t)s_index_page.len);
+
+		r->path = actual_path;
+	}
+	return 0;
 }
