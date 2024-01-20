@@ -38,6 +38,9 @@ FUTURE ENHANCEMENTS
 Save card data when a quiz is completed. For each card, save the users's score
 for the front and back of the card and when it should next be reviewed.
 
+Write automated tests so I don't have to do all this manual testing. Its
+painful.
+
 Split out the ASL specific stuff into its own project the server loads via .so.
 The idea here is to have the .so be an "application" that the server can be
 told to load with an attached URI. If that URI is specified in a request, the

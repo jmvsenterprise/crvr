@@ -147,11 +147,11 @@ int asl_post(struct request *r, int client)
 	static const struct str good_btn = STR("good");
 	static const struct str great_btn = STR("great");
 
-	for (long i = 0; i < r->param_count; ++i) {
+	for (long i = 0; i < r->header_count; ++i) {
 		printf("param %li=", i);
-		str_print(stdout, &r->params[i].key);
+		str_print(stdout, &r->headers[i].key);
 		puts("=");
-		str_print(stdout, &r->params[i].value);
+		str_print(stdout, &r->headers[i].value);
 		puts("\n");
 	}
 

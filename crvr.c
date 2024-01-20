@@ -79,13 +79,13 @@ static int parse_into_param(struct str *line, struct http_param *param)
 static int add_param_to_request(struct request *r, struct http_param *param)
 {
 	if (!r || !param) return EINVAL;
-	assert(LEN(r->params) <= LONG_MAX);
-	if (r->param_count >= (long)LEN(r->params)) {
+	assert(LEN(r->headers) <= LONG_MAX);
+	if (r->header_count >= (long)LEN(r->headers)) {
 		DEBUG("invalid param count");
 		return ENOBUFS;
 	}
-	r->params[r->param_count] = *param;
-	r->param_count++;
+	r->headers[r->header_count] = *param;
+	r->header_count++;
 	return 0;
 }
 
@@ -111,8 +111,8 @@ static int parse_header_options(struct str rest_of_header, struct request *r)
 		return EINVAL;
 	}
 
-	while ((rest_of_header.len > 0) && (r->param_count <
-		(long)LEN(r->params)))
+	while ((rest_of_header.len > 0) && (r->header_count <
+		(long)LEN(r->headers)))
 	{
 		long eol = str_find_substr(&rest_of_header, &newline);
 		struct str line;
@@ -137,7 +137,7 @@ static int parse_header_options(struct str rest_of_header, struct request *r)
 		error = add_param_to_request(r, &param);
 	}
 
-	printf("Found %lu headers.\n", r->param_count);
+	printf("Found %lu headers.\n", r->header_count);
 	return 0;
 }
 
@@ -393,6 +393,10 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	print_request(r);
 
 	if (str_cmp_cstr(&r->path, "asl.html") == 0) return asl_post(r, client);
+
+	printf("No post response\n");
+
+	send_path(&r->path, client, p);
 
 	printf("Don't know what to do with post to \"");
 	str_print(stdout, &r->path);

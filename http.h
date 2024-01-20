@@ -45,8 +45,8 @@ struct request {
 	enum request_type type;
 	struct str path;
 	struct str format;
-	long param_count;
-	struct http_param params[MAX_HEADER_LINES];
+	long header_count;
+	struct http_param headers[MAX_HEADER_LINES];
 	struct str buffer;
 	struct str post_params_buffer;
 };
@@ -102,6 +102,19 @@ void print_request(struct request *r);
  */
 int send_data(int client, const char *header, const char *contents,
 	size_t content_len);
+
+/**
+ * @file Sends the file with the specified path to a client.
+ *
+ * @param[in] file_path - The path to the file to send.
+ * @param[in] client - The client to send the file to.
+ * @param[in] p - The pool to use to allocate space to send the file to the
+ *                client.
+ *
+ * @return Returns 0 if the file is sent successfully. Otherwise returns an
+ *         error code.
+ */
+int send_path(struct str *file_path, int client, struct pool *p);
 
 /*
  * DEPRECATED Sends a file to the client with the HTTP 200 OK header.

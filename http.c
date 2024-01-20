@@ -7,6 +7,7 @@
 
 #include <assert.h>
 #include <errno.h>
+#include <linux/limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -21,10 +22,10 @@ int find_param(const struct request *r, const char *param_name,
 	if (!out || !r || !param_name) return EINVAL;
 
 	static_assert(SIZE_MAX > LONG_MAX);
-	assert((size_t)r->param_count < LEN(r->params));
-	for (long i = 0; i < r->param_count; ++i) {
-		if (str_cmp_cstr(&r->params[i].key, param_name) == 0) {
-			*out = r->params[i];
+	assert((size_t)r->header_count < LEN(r->headers));
+	for (long i = 0; i < r->header_count; ++i) {
+		if (str_cmp_cstr(&r->headers[i].key, param_name) == 0) {
+			*out = r->headers[i];
 			return 0;
 		}
 	}
@@ -35,9 +36,9 @@ int header_find_value(struct request *r, const char *key, struct str *value)
 {
 	if (!r || !key || !value) return EINVAL;
 
-	for (long i = 0; i < r->param_count; ++i) {
-		if (str_cmp_cstr(&r->params[i].key, key) == 0) {
-			*value = r->params[i].value;
+	for (long i = 0; i < r->header_count; ++i) {
+		if (str_cmp_cstr(&r->headers[i].key, key) == 0) {
+			*value = r->headers[i].value;
 			return 0;
 		}
 	}
@@ -62,14 +63,14 @@ void print_request(struct request *r)
 	puts("\nFormat: ");
 	str_print(stdout, &r->format);
 	puts("\n");
-	if (r->param_count > 0) {
+	if (r->header_count > 0) {
 		printf("Parameters:\n"
 		       "-----------\n");
-		for (long i = 0; i < r->param_count; ++i) {
+		for (long i = 0; i < r->header_count; ++i) {
 			printf("%li: ", i);
-			str_print(stdout, &r->params[i].key);
+			str_print(stdout, &r->headers[i].key);
 			puts(":");
-			str_print(stdout, &r->params[i].value);
+			str_print(stdout, &r->headers[i].value);
 			puts("\n");
 		}
 		printf("-----------\n");
@@ -120,6 +121,27 @@ int send_data(int client, const char *header, const char *contents,
 	return 0;
 }
 
+int send_path(struct str *file_path, int client, struct pool *p)
+{
+	char path[PATH_MAX + 1] = {0};
+	int err = str_copy_to_cstr(file_path, path, PATH_MAX);
+	if (err) {
+		fprintf(stderr, "Failed to copy path to c-string: %i\n", err);
+		return err;
+	}
+	FILE *f = fopen(path, "r");
+	if (!f) {
+		fprintf(stderr, "Failed to open file \"%s\": %i\n", path,
+			errno);
+		return errno;
+	}
+	err = send_file(f, client, p);
+	fclose(f);
+	if (err)
+		fprintf(stderr, "send_file failed for \"%s\": %i\n", path, err);
+	return err;
+}
+
 int send_file(FILE *f, int client, struct pool *p)
 {
 	char *contents;
@@ -143,28 +165,41 @@ int send_file(FILE *f, int client, struct pool *p)
 		return -1;
 	}
 	printf("File is %lu bytes.\n", file_size);
-	contents = calloc((size_t)file_size, sizeof(*contents));
+
+	long pool_cap = pool_get_remaining_capacity(p);
+	if (pool_cap < file_size) {
+		fprintf(stderr, "%s> No pool space. Needed %li have %li\n",
+			__func__, file_size, pool_cap);
+		return ENOBUFS;
+	}
+	long pool_pos = pool_get_position(p);
+	assert(pool_pos != -1);
+	contents = pool_alloc(p, file_size);
 	if (!contents) {
 		fprintf(stderr, "Failed to allocate buffer for file: %d.\n",
 			errno);
 		return errno;
-	} else {
-		chars_read = fread((void*)contents, sizeof(*contents),
-			(size_t)file_size, f);
-		if (chars_read != (size_t)file_size) {
-			printf("Failed to read in file: %lu of %ld\n",
-				chars_read, file_size);
-			result = errno;
-		}
+	}
 
+	// Note: don't return without resetting the pool now
+	
+	chars_read = fread((void*)contents, sizeof(*contents),
+		(size_t)file_size, f);
+	if (chars_read == (size_t)file_size) {
 		result = send_data(client, ok_header, contents,
 			(size_t)file_size);
-		if (result < 0) {
-			fprintf(stderr, "Failed to send message.\n");
-			result = errno;
-		}
-		free(contents);
+	} else {
+		printf("Failed to read in file: %lu of %ld\n", chars_read,
+			file_size);
+		result = errno;
 	}
+
+	if (result != 0) {
+		fprintf(stderr, "Failed to send message.\n");
+		result = errno;
+	}
+	pool_reset(p, pool_pos);
+
 	return result;
 }
 
