@@ -1,3 +1,5 @@
+.PHONY: all clean install uninstall
+	
 # config.mk doesn't exist by default. Either copy unix.mk or windows.mk to
 # config.mk or symlink it.
 include config.mk
@@ -23,5 +25,12 @@ clean:
 	$(RM) $(OUT)
 	$(RM) *.$(OBJ)
 	$(RM) crvr.tar.xz
+
+install: crvr
+	mkdir -p /usr/local/bin
+	cp crvr /usr/local/bin
+
+uninstall:
+	if [ -e /usr/local/bin/crvr ]; rm /usr/local/bin/crvr
 	
 .PHONY: all clean
