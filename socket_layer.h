@@ -10,7 +10,7 @@
 
 #if WINDOWS
 #include <winsock2.h>
-#elif UNIX
+#elif LINUX | MAC
 #include <errno.h>
 #include <netinet/in.h>
 #include <sys/socket.h>

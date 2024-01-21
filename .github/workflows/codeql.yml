@@ -69,7 +69,7 @@ jobs:
     - run: |
          echo "Run, Build Application using script"
          git submodule update --init --recursive
-         ln -s unix.mk config.mk
+         ln -s linux.mk config.mk
          make
 
     - name: Perform CodeQL Analysis

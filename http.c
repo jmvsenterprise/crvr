@@ -7,7 +7,6 @@
 
 #include <assert.h>
 #include <errno.h>
-#include <linux/limits.h>
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
@@ -61,7 +60,7 @@ int find_param(const struct request *r, const char *param_name,
 {
 	if (!out || !r || !param_name) return EINVAL;
 
-	static_assert(SIZE_MAX > LONG_MAX);
+	static_assert(SIZE_MAX > LONG_MAX, "Update cast below");
 	assert((size_t)r->header_count < LEN(r->headers));
 	for (long i = 0; i < r->header_count; ++i) {
 		if (str_cmp_cstr(&r->headers[i].key, param_name) == 0) {
@@ -77,7 +76,7 @@ int find_post_param(const struct request *r, const char *param_name,
 {
 	if (!r || !param_name || !out) return EINVAL;
 
-	static_assert(SIZE_MAX > LONG_MAX);
+	static_assert(SIZE_MAX > LONG_MAX, "Update case below");
 	assert((size_t)r->post_param_count < LEN(r->post_params));
 	for (long i = 0; i < r->post_param_count; ++i) {
 		if (str_cmp_cstr(&r->post_params[i].key, param_name) == 0) {
@@ -305,7 +304,8 @@ int parse_post_parameters(struct request *r)
 
 	struct str buf = r->post_params_buffer;
 	// Need to fix the cast below if this static assert fails.
-	static_assert((size_t)LONG_MAX > LEN(r->post_params));
+	static_assert((size_t)LONG_MAX > LEN(r->post_params),
+		"Update cast below");
 	for (; (buf.len > 0) && (r->post_param_count <
 		(long)LEN(r->post_params));)
 	{
@@ -524,7 +524,8 @@ static int add_post_param(struct request *r, struct http_param *param)
 	if (!r || !param) return EINVAL;
 
 	// If this assert doesn't work, need to fix the cast below it.
-	static_assert((size_t)LONG_MAX > LEN(r->post_params));
+	static_assert((size_t)LONG_MAX > LEN(r->post_params),
+		"Update cast below");
 	if (r->post_param_count < (long)LEN(r->post_params)) {
 		r->post_params[r->post_param_count] = *param;
 		r->post_param_count++;
@@ -608,8 +609,9 @@ static int modify_path(struct request *r, struct pool *p)
 		}
 		assert(actual_path.len == space_needed);
 		assert(actual_path.len >= r->path.len + s_index_page.len);
-		static_assert(sizeof(size_t) >= sizeof(r->path.len));
-		static_assert(SIZE_MAX > LONG_MAX);
+		static_assert(sizeof(size_t) >= sizeof(r->path.len),
+			"Update cast below");
+		static_assert(SIZE_MAX > LONG_MAX, "Update case below");
 		(void)memcpy(actual_path.s, r->path.s,
 			(size_t)r->path.len);
 		(void)strncat(actual_path.s + actual_path.len, s_index_page.s,

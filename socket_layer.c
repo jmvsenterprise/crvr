@@ -28,7 +28,7 @@ static int get_error(void)
 	WSAGetLastError();
 }
 
-#elif UNIX
+#elif LINUX | MAC
 // Nothing
 #else
 

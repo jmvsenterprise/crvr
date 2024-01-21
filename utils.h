@@ -9,6 +9,14 @@
 
 #include <stddef.h>
 
+#if LINUX
+#include <linux/limits.h>
+#elif MAC
+#include <sys/syslimits.h>
+#else
+#error "Don't know where to get PATH_MAX"
+#endif
+
 #define KILOBYTE (1000)
 #define KIBIBYTE (1024)
 #define MEGABYTE (1000000)

@@ -8,7 +8,6 @@
 #include <dirent.h>
 #include <errno.h>
 #include <limits.h>
-#include <linux/limits.h>
 #include <stdarg.h>
 #include <stdint.h>
 #include <stdio.h>
@@ -111,7 +110,7 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		print_request(r);
 		return EINVAL;
 	}
-	err = str_to_long(&content_len, &total_len, 10);
+	err = str_to_long(&content_len, 10, &total_len);
 	if (err) {
 		fputs("Failed to convert \"", stderr);
 		str_print(stderr, &content_len);
@@ -309,7 +308,7 @@ static int update_post_data(struct request *r, int client, struct pool *p,
 		long bytes_read = 0;
 		while (bytes_read < bytes_needed) {
 			// Need to update space below if this isn't the case.
-			static_assert(SIZE_MAX > LONG_MAX);
+			static_assert(SIZE_MAX > LONG_MAX, "Update cast below");
 			size_t space = (size_t)(bytes_needed - bytes_read);
 			ssize_t in = read(client, r->post_params_buffer.s +
 				bytes_read, space);

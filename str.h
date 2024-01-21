@@ -128,14 +128,14 @@ int str_alloc_from_cstr(struct pool *p, const char *cstr, const long len,
  * @brief Converts the contents of an str to a long.
  *
  * @param[in] s - The str to attempt to convert.
- * @param[out] l - The location to store the long values.
  * @param[in] base - The base to use when converting the string representation
  *                   to the number.
+ * @param[out] l - The location to store the long values.
  *
  * @return Returns 0 if the conversion was successful and l is populated.
  *         Otherwise returns an error code.
  */
-int str_to_long(const struct str *s, long *l, long base);
+int str_to_long(const struct str *s, long base, long *l);
 
 /**
  * @brief Copies the str data into a c-string.
@@ -267,7 +267,7 @@ int str_alloc_from_cstr(struct pool *p, const char *cstr, const long len,
 }
 
 
-int str_to_long(const struct str *s, long *l, long base)
+int str_to_long(const struct str *s, long base, long *l)
 {
 	if (!s || !l || (base <= 0)) return EINVAL;
 
@@ -282,6 +282,7 @@ int str_to_long(const struct str *s, long *l, long base)
 		value *= base;
 		value += c;
 	}
+	*l = value;
 	return 0;
 }
 

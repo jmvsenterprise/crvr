@@ -16,6 +16,6 @@ jobs:
     - name: init-submodules
       run: git submodule update --init --recursive
     - name: config
-      run: ln -s unix.mk config.mk
+      run: ln -s linux.mk config.mk
     - name: make
       run: make
