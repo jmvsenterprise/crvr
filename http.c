@@ -17,11 +17,31 @@
 const char ok_header[] = "HTTP/1.1 200 OK";
 static const struct str s_index_page = STR("index.html");
 static const struct str s_line_end = STR("\r\n");
+static const struct str s_post_param_delimiter = STR("=");
+static const struct str s_header_param_delimiter = STR(": ");
 
 // Local functions
 static int add_param_to_request(struct request *r, struct http_param *param);
 static int add_post_param(struct request *r, struct http_param *param);
-static int parse_into_param(struct str *line, struct http_param *param);
+
+/**
+ * @brief Parse the line into an http_param.
+ *
+ * This function parses a line into a {key, value} parameter. It takes a custom
+ * delimiter because HTTP header parameters are delimited by ": " whereas POST
+ * parameters are delimited by "=".
+ *
+ * @param[in] str - The string to parse into a parameter.
+ * @param[in] delimiter - The str that delimits the key from the value for this
+ *                        parameter.
+ * @param[out] param - The location to store the param data.
+ *
+ * @return Returns 0 if the parameter was successfully parsed. Otherwise returns
+ *         and error code.
+ */
+static int parse_into_param(struct str *str, const struct str *delimiter,
+	struct http_param *param);
+
 static int parse_request_buffer(struct request *request, struct pool *p);
 /**
  * @brief Handle some special cases for the path.
@@ -119,7 +139,8 @@ static int parse_header_options(struct str rest_of_header, struct request *r)
 		rest_of_header.s += line.len + newline.len;
 		rest_of_header.len -= line.len + newline.len;
 
-		error = parse_into_param(&line, &param);
+		error = parse_into_param(&line, &s_header_param_delimiter,
+			&param);
 		if (error) {
 			fputs("Failed to parse param \"", stderr);
 			str_print(stderr, &line);
@@ -162,7 +183,9 @@ int parse_request(char *data, long data_len, struct request *request,
 		return ENOBUFS;
 	}
 
-	int err = parse_request_buffer(request, p);
+	int err = str_get_substr(&request->buffer, end_of_header +
+		header_separator.len, EOSTR, &request->post_params_buffer);
+	err = parse_request_buffer(request, p);
 	if (err) {
 		fprintf(stderr, "Failed to parse request buffer %d.\n", err);
 		return err;
@@ -301,7 +324,8 @@ int parse_post_parameters(struct request *r)
 			line = buf;
 		}
 		struct http_param param = {0};
-		int err = parse_into_param(&line, &param);
+		int err = parse_into_param(&line, &s_post_param_delimiter,
+			&param);
 		if (err) {
 			fprintf(stderr, "%s> Failed to parse param from \"",
 				__func__);
@@ -509,33 +533,33 @@ static int add_post_param(struct request *r, struct http_param *param)
 	return ENOBUFS;
 }
 
-static int parse_into_param(struct str *line, struct http_param *param)
+static int parse_into_param(struct str *str, const struct str *delimiter,
+	struct http_param *param)
 {
-	static const struct str separator = STR(": ");
+	if (!str || !delimiter || !param) return EINVAL;
+	if (str->len == 0) return EINVAL;
 
-	if (!line || !param) return EINVAL;
-	if (line->len == 0) return EINVAL;
-	const long sep_location = str_find_substr(line, &separator);
-	if (sep_location == -1) {
-		fputs("Failed to find separator for \"", stderr);
-		str_print(stderr, line);
+	const long delim_location = str_find_substr(str, delimiter);
+	if (delim_location == -1) {
+		fputs("Failed to find delimiter for \"", stderr);
+		str_print(stderr, str);
 		fputs("\"\n", stderr);
 		return EPROTO;
 	}
-	int err = str_get_substr(line, 0, sep_location, &param->key);
+	int err = str_get_substr(str, 0, delim_location, &param->key);
 	if (err) {
 		fprintf(stderr, "Failed to get key from [0, %li] in \"",
-			sep_location);
-		str_print(stderr, line);
+			delim_location);
+		str_print(stderr, str);
 		fprintf(stderr, "\": %i\n", err);
 		return err;
 	}
-	const long value_start = sep_location + separator.len;
-	err = str_get_substr(line, value_start, EOSTR, &param->value);
+	const long value_start = delim_location + delimiter->len;
+	err = str_get_substr(str, value_start, EOSTR, &param->value);
 	if (err) {
 		fprintf(stderr, "Failed to get value from [%li, -1] in \"",
 			value_start);
-		str_print(stderr, line);
+		str_print(stderr, str);
 		fprintf(stderr, "\": %i\n", err);
 		return err;
 	}

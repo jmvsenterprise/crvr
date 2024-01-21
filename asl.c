@@ -161,11 +161,11 @@ int asl_post(struct request *r, int client)
 		return EINVAL;
 	}
 
-	puts("button param: ");
+	fputs("button param: ", stdout);
 	str_print(stdout, &button.key);
-	puts(":");
+	fputs(":", stdout);
 	str_print(stdout, &button.value);
-	puts("\n");
+	fputs("\n", stdout);
 
 	struct quiz_item *card = quiz + current_quiz_item;
 	if (str_cmp(&poor_btn, &button.value) == 0) {

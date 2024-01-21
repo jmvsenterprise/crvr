@@ -27,8 +27,25 @@
 
 // Default port for the webserver
 static const unsigned short port = 8080;
-
+static const struct str s_end_of_header_str = STR("\r\n\r\n");
 // Local functions
+/**
+ * @brief Updates the POST buffer in the request with data from the client.
+ *
+ * @param[in] r - The request to update
+ * @param[in] client - The client making the request, and who to read data from.
+ * @param[in] p - The pool to allocate data from if needed.
+ * @param[in] bytes_needed - The number of bytes that needs to be read from the
+ *                           client to get all the data.
+ * @param[in] bytes_received - The number of bytes received from the client so
+ *                             far for this request. This number will be used to
+ *                             determine how much data to read.
+ *
+ * @return Returns 0 if the post buffer in the request was successfully updated
+ *         and it points to the POST http data. Otherwise returns an error code.
+ */
+static int update_post_data(struct request *r, int client, struct pool *p,
+	const long bytes_needed, long bytes_received);
 
 /*
  * Prints the address in a sockaddr_in.
@@ -78,7 +95,7 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 }
 
 int handle_post_request(int client, struct request *r, struct pool *p,
-	size_t bytes_received)
+	long bytes_received)
 {
 	long total_len = 0;
 	long bytes_needed = 0;
@@ -108,34 +125,15 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	printf("content length is %ld\n", total_len);
 	bytes_needed = total_len;
 
-	if (bytes_needed > pool_get_remaining_capacity(p)) {
-		fprintf(stderr, "Request too big: %lu. Max: %li.\n",
-			bytes_needed, pool_get_remaining_capacity(p));
-		return ENOBUFS;
-	}
-	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
-		bytes_received, bytes_needed);
-
-	str_alloc(p, bytes_needed, &r->post_params_buffer);
-	long bytes_read = 0;
-	while (bytes_read < bytes_needed) {
-		// Need to update space below if this isn't the case.
-		assert(SIZE_MAX > LONG_MAX);
-		size_t space = (size_t)(bytes_needed - bytes_read);
-		ssize_t in = read(client, r->post_params_buffer.s + bytes_read,
-			space);
-		if (in < 0) {
-			fprintf(stderr, "Failed to read from client: %d.\n",
-				errno);
-			return errno;
-		}
-		bytes_read += in;
-		printf("Read %ld (%lu/%lu)\n", in, bytes_read, bytes_needed);
+	err = update_post_data(r, client, p, bytes_needed, bytes_received);
+	if (err) {
+		fprintf(stderr, "%s> Failed to read post data: %i\n",
+			__func__, err);
+		return err;
 	}
 
-	print_request(r);
-
-	if (str_cmp_cstr(&r->path, "asl.html") == 0) return asl_post(r, client);
+	if (str_cmp_cstr(&r->path, "asl.html") == 0)
+		return asl_post(r, client);
 
 	printf("No post response\n");
 
@@ -159,8 +157,8 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 		recv_result = recv(client, buffer, LEN(buffer) - 1, 0);
 	} while ((recv_result == -1) && (errno == EAGAIN));
 	
-	size_t bytes_rxed = (size_t)recv_result;
-	if (bytes_rxed == (size_t)-1) {
+	long bytes_rxed = recv_result;
+	if (bytes_rxed == -1) {
 		fprintf(stderr, "Failed to read from client: %d.\n",
 			get_error());
 		return -1;
@@ -177,8 +175,14 @@ int handle_client(int client, struct sockaddr_in *client_addr, struct pool *p)
 	}
 	err = 0;
 	if (request.type == GET) {
+		printf("GET \"");
+		str_print(stdout, &request.path);
+		printf("\"\n");
 		err = handle_get_request(client, &request, p);
 	} else {
+		printf("POST \"");
+		str_print(stdout, &request.path);
+		printf("\"\n");
 		err = handle_post_request(client, &request, p, bytes_rxed);
 	}
 	if (err != 0) {
@@ -276,3 +280,51 @@ int main()
 	return result;
 }
 
+static int update_post_data(struct request *r, int client, struct pool *p,
+	const long bytes_needed, long bytes_received)
+{
+	int err = 0;
+
+	if (!r || !p || (bytes_needed < 0) || (bytes_received <= 0)) {
+		err = EINVAL;
+	} else if (bytes_needed == 0) {
+		// We already have all the data needed.
+		long eoh = str_find_substr(&r->buffer, &s_end_of_header_str);
+		if (eoh == -1) {
+			r->post_params_buffer = (struct str){0, 0};
+		} else {
+			err = str_get_substr(&r->buffer, eoh +
+				s_end_of_header_str.len, EOSTR,
+				&r->post_params_buffer);
+		}
+	} else if (bytes_needed > pool_get_remaining_capacity(p)) {
+		// No room to get the data needed.
+		err = ENOBUFS;
+	} else {
+		// Get the data needed
+		printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
+			bytes_received, bytes_needed);
+
+		str_alloc(p, bytes_needed, &r->post_params_buffer);
+		long bytes_read = 0;
+		while (bytes_read < bytes_needed) {
+			// Need to update space below if this isn't the case.
+			static_assert(SIZE_MAX > LONG_MAX);
+			size_t space = (size_t)(bytes_needed - bytes_read);
+			ssize_t in = read(client, r->post_params_buffer.s +
+				bytes_read, space);
+			if (in < 0) {
+				fprintf(stderr,
+					"Failed to read from client: %d.\n",
+					errno);
+				err = errno;
+			} else {
+				bytes_read += in;
+				printf("Read %ld (%lu/%lu)\n", in, bytes_read,
+					bytes_needed);
+			}
+		}
+	}
+
+	return err;
+}
