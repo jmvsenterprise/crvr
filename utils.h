@@ -7,6 +7,10 @@
 #ifndef UTILS_H
 #define UTILS_H
 
+#if __cplusplus
+extern "C" {
+#endif
+
 #include <stddef.h>
 
 #if LINUX
@@ -72,5 +76,9 @@ void print_blob(const char *blob, const size_t len, int max_lines);
  */
 int print_var_to(char *buf, size_t *buf_len, const size_t buf_cap,
 	const char *var_name, const char *format, ...);
+
+#if __cplusplus
+}
+#endif
 
 #endif // UTILS_H

@@ -18,7 +18,7 @@
 #include <time.h>
 #include <unistd.h>
 
-#include "asl.h"
+#include "asl/asl.h"
 #include "pool.h"
 #include "socket_layer.h"
 #include "str.h"
@@ -103,7 +103,7 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	(void)p;
 
 	// Convert the content-length in the header to bytes.
-	struct str content_len = {0};
+	struct str content_len = {};
 	int err = header_find_value(r, "Content-Length", &content_len);
 	if (err) {
 		fprintf(stderr, "Did not find Content-Length in header\n");

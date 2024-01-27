@@ -6,6 +6,10 @@
 #ifndef HTTP_H
 #define HTTP_H
 
+#if __cplusplus
+extern "C" {
+#endif
+
 #include <stdint.h>
 #include <stdio.h>
 
@@ -185,5 +189,9 @@ int send_file(FILE *f, int client, struct pool *p);
  * Returns 0 if the message was sent. Otherwise an error code is returned.
  */
 int send_404(int client);
+
+#if __cplusplus
+}
+#endif
 
 #endif // HTTP_H

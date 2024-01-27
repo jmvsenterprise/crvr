@@ -14,6 +14,10 @@
 #ifndef BASE_STR_H
 #define BASE_STR_H
 
+#if __cplusplus
+extern "C" {
+#endif
+
 #include <math.h>
 #include <limits.h>
 #include <stdio.h>
@@ -298,5 +302,9 @@ int str_copy_to_cstr(const struct str *s, char *dest, long dest_len)
 }
 
 #endif // DEFINE_STR
+
+#if __cplusplus
+}
+#endif
 
 #endif // BASE_STR_H

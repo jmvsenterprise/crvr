@@ -16,3 +16,4 @@ config.mk
 server.tar.xz
 .DS_Store
 crvr
+*.xcodeproj

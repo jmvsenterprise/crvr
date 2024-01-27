@@ -8,6 +8,10 @@
 #ifndef SOCKET_LAYER_H
 #define SOCKET_LAYER_H
 
+#if __cplusplus
+extern "C" {
+#endif
+
 #if WINDOWS
 #include <winsock2.h>
 #elif LINUX | MAC
@@ -32,5 +36,9 @@ void cleanup_socket_layer(void) {}
  * Retrieve the error from the socket layer.
  */
 int get_error(void) { return errno; }
+
+#if __cplusplus
+}
+#endif
 
 #endif // SOCKET_LAYER_H

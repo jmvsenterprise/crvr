@@ -15,6 +15,10 @@
 #ifndef POOL_H
 #define POOL_H
 
+#if __cplusplus
+extern "C" {
+#endif
+
 /*
  * Stores a block of memory, the offset into it where memory is unused and
  * the total capacity of the block.
@@ -186,5 +190,9 @@ long pool_get_remaining_capacity(struct pool *p)
 }
 
 #endif // DEFINE_POOL
+       //
+#if __cplusplus
+}
+#endif
 
 #endif
