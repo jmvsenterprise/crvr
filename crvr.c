@@ -96,6 +96,7 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 int handle_post_request(int client, struct request *r, struct pool *p,
 	long bytes_received)
 {
+	long content_len = 0;
 	long total_len = 0;
 	long bytes_needed = 0;
 
@@ -103,32 +104,35 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 	(void)p;
 
 	// Convert the content-length in the header to bytes.
-	struct str content_len = {0};
-	int err = header_find_value(r, "Content-Length", &content_len);
+	struct str content_len_str = {0};
+	int err = header_find_value(r, "Content-Length", &content_len_str);
 	if (err) {
 		fprintf(stderr, "Did not find Content-Length in header\n");
 		print_request(r);
 		return EINVAL;
 	}
-	err = str_to_long(&content_len, 10, &total_len);
+	err = str_to_long(&content_len_str, 10, &content_len);
 	if (err) {
 		fputs("Failed to convert \"", stderr);
-		str_print(stderr, &content_len);
+		str_print(stderr, &content_len_str);
 		fprintf(stderr, "\" to long. err=%u.\n", err);
 		return err;
 	}
-	if (total_len < 0) {
-		fprintf(stderr, "Invalid content length %lu.\n", total_len);
+	if (content_len < 0) {
+		fprintf(stderr, "Invalid content length %lu.\n", content_len);
 		return EINVAL;
 	}
-	printf("content length is %ld\n", total_len);
-	bytes_needed = total_len;
+	printf("content length is %ld\n", content_len);
+	bytes_needed = bytes_received - (r->buffer.len + total_len);
 
-	err = update_post_data(r, client, p, bytes_needed, bytes_received);
-	if (err) {
-		fprintf(stderr, "%s> Failed to read post data: %i\n",
-			__func__, err);
-		return err;
+	if (bytes_needed > 0) {
+		err = update_post_data(r, client, p, bytes_needed,
+			bytes_received);
+		if (err) {
+			fprintf(stderr, "%s> Failed to read post data: %i\n",
+				__func__, err);
+			return err;
+		}
 	}
 
 	if (str_cmp_cstr(&r->path, "asl.html") == 0)
@@ -279,6 +283,54 @@ int main()
 	return result;
 }
 
+/**
+ * @brief Reads more data from the client to finish reading in the request.
+ *
+ * @param[in,out] r - The request to update.
+ * @param[in] client - The client making the request.
+ * @param[in,out] p - The pool to allocate data from.
+ * @param[in] bytes_needed - The number of bytes that still need to be read from
+ *                           the client.
+ * @param[in] bytes_received - The number of bytes that have been received from
+ *                             the client so far.
+ * 
+ * @return Returns 0 if the bytes needed were successfully read into the
+ *     request. Otherwise returns an error code.
+ */
+static int get_more_data(struct request *r, int client, struct pool *p,
+	const long bytes_needed, long bytes_received)
+{
+	// Get the data needed
+	printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
+		bytes_received, bytes_needed);
+
+	int err = str_alloc(p, bytes_needed, &r->post_params_buffer);
+	if (err) {
+		fprintf(stderr, "%s: Failed to allocate str: %i.\n",
+			__func__, err);
+		return err;
+	}
+	long bytes_read = 0;
+	while (!err && (bytes_read < bytes_needed)) {
+		// Need to update space below if this isn't the case.
+		static_assert(SIZE_MAX > LONG_MAX, "Update cast below");
+		size_t space = (size_t)(bytes_needed - bytes_read);
+		ssize_t in = read(client, r->post_params_buffer.s +
+			bytes_read, space);
+		if (in < 0) {
+			fprintf(stderr,
+				"Failed to read from client: %d.\n",
+				errno);
+			err = errno;
+		} else {
+			bytes_read += in;
+			printf("Read %ld (%lu/%lu)\n", in, bytes_read,
+				bytes_needed);
+		}
+	}
+	return 0;
+}
+
 static int update_post_data(struct request *r, int client, struct pool *p,
 	const long bytes_needed, long bytes_received)
 {
@@ -300,29 +352,7 @@ static int update_post_data(struct request *r, int client, struct pool *p,
 		// No room to get the data needed.
 		err = ENOBUFS;
 	} else {
-		// Get the data needed
-		printf("Have %lu bytes of content, Need to read in %lu more bytes\n",
-			bytes_received, bytes_needed);
-
-		str_alloc(p, bytes_needed, &r->post_params_buffer);
-		long bytes_read = 0;
-		while (bytes_read < bytes_needed) {
-			// Need to update space below if this isn't the case.
-			static_assert(SIZE_MAX > LONG_MAX, "Update cast below");
-			size_t space = (size_t)(bytes_needed - bytes_read);
-			ssize_t in = read(client, r->post_params_buffer.s +
-				bytes_read, space);
-			if (in < 0) {
-				fprintf(stderr,
-					"Failed to read from client: %d.\n",
-					errno);
-				err = errno;
-			} else {
-				bytes_read += in;
-				printf("Read %ld (%lu/%lu)\n", in, bytes_read,
-					bytes_needed);
-			}
-		}
+		err = get_more_data(r, client, p, bytes_needed, bytes_received);
 	}
 
 	return err;

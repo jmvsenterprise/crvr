@@ -1,4 +1,4 @@
-.PHONY: all clean install uninstall
+.PHONY: all clean install uninstall test
 	
 # config.mk doesn't exist by default. Either copy unix.mk or windows.mk to
 # config.mk or symlink it.
@@ -20,6 +20,24 @@ $(OUT): $(OBJS)
 
 analyze: crvr.c asl.c
 	clang-tidy crvr.c asl.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*
+
+test: tests crvr tests/asl_done.html tests/asl.html tests/index.html tests/image.png
+	cd tests/ && gdb ../crvr
+
+tests/asl_done.html: asl_done.html
+	cp -f $^ $@
+
+tests/asl.html: asl.html
+	cp -f $^ $@
+
+tests/index.html: index.html
+	cp -f $^ $@
+
+tests/image.png:
+	scrot tests/image.png
+
+tests:
+	mkdir tests
 
 clean:
 	$(RM) $(OUT)
