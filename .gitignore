@@ -19,3 +19,4 @@ crvr
 tests/
 *.swo
 *.dylib
+text_quizzer.conf
