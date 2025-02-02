@@ -19,6 +19,7 @@
 #include <unistd.h>
 
 #include "asl.h"
+#include "plugins.h"
 #include "pool.h"
 #include "socket_layer.h"
 #include "str.h"
@@ -27,6 +28,10 @@
 // Default port for the webserver
 static const unsigned short port = 8080;
 static const struct str s_end_of_header_str = STR("\r\n\r\n");
+static struct plugin plugins[] = {
+	{.library_name="text_quizzer.so", .uri_trigger="quiz.html"},
+};
+
 // Local functions
 /**
  * @brief Updates the POST buffer in the request with data from the client.
@@ -250,6 +255,9 @@ int main()
 		fprintf(stderr, "Failed to initialize ASL\n");
 		return -1;
 	}
+
+	// Load plugins
+	load_plugins(plugins, LEN(plugins));
 
 	// Load the server up
 	if (init_socket_layer() != 0) {
