@@ -13,8 +13,10 @@ OBJS=\
 	socket_layer.$(OBJ) \
 	base_defs.$(OBJ) \
 	plugins.$(OBJ)
+PLUGINS:=\
+	text_quizzer.$(SO)
 
-all: $(OUT)
+all: $(OUT) $(PLUGINS)
 
 pkg: crvr.tar.xz
 
@@ -24,6 +26,9 @@ crvr.tar.xz: crvr asl.html asl_done.html
 
 $(OUT): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+
+%.$(SO): plugins/%.c
+	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
 analyze: crvr.c asl.c
 	clang-tidy crvr.c asl.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*

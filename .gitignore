@@ -18,3 +18,4 @@ server.tar.xz
 crvr
 tests/
 *.swo
+*.dylib

@@ -29,7 +29,7 @@
 static const unsigned short port = 8080;
 static const struct str s_end_of_header_str = STR("\r\n\r\n");
 static struct plugin plugins[] = {
-	{.library_name="text_quizzer.so", .uri_trigger="quiz.html"},
+	{.library_name="text_quizzer", .uri_trigger="quiz.html"},
 };
 
 // Local functions
