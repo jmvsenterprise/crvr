@@ -1,0 +1,10 @@
+To get plugins working:
+- Create a configuration file that tells the server what plugins to load
+  - Just a text file of .so names and a URI page that will cause the server to
+    send GETs and POSTs to the plugin.
+    - ex: "asl.html:asl.so" or maybe "asl.html -> asl.so"
+    - Like asl.h each plugin must have an load, unload, get_handler and
+      post_handler functions available.
+- Server loads plugins.
+- When request comes in, see if the request is to the URI for the plugin. If it
+  is send it to the plugin to handle completely.

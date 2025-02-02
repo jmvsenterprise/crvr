@@ -72,10 +72,15 @@ int handle_get_request(int client, struct request *request, struct pool *p)
 	str_print(stdout, &request->path);
 	printf("\"\n");
 
+	// Hand off processing specific pages to a plugin:
+
+	// ASL pluging:
 	if (str_cmp(&request->path, &ASL_PAGE) == 0) {
 		printf("Dynamic URI\n");
 		return asl_get(request, client);
 	}
+
+	// Get the file for the user.
 	FILE *f = NULL;
 	char file_path[PATH_MAX] = {0};
 
@@ -135,6 +140,9 @@ int handle_post_request(int client, struct request *r, struct pool *p,
 		}
 	}
 
+	// Hand off processing if we are targetting a pluging.
+
+	// ASL plugin:
 	if (str_cmp_cstr(&r->path, "asl.html") == 0)
 		return asl_post(r, client);
 
