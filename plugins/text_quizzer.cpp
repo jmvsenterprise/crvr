@@ -1,17 +1,19 @@
 /**
  * Copyright (C) 2025 Joseph M Vrba
  */
-#include <assert.h>
 #include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+extern "C" {
 #include "http.h"
-
-/* Bring in the definitions for STR since we are a plugin. */
-#define DEFINE_STR
 #include "str.h"
+}
+
+#include <string>
+#include <vector>
+#include <iostream>
 
 #define CONFIG_FILE "text_quizzer.conf"
 
@@ -28,16 +30,25 @@ struct file_data {
 	char *data;
 	long len;
 };
-struct file_data config_data = {0};
-struct str *quiz_files = NULL;
-int quiz_file_count = 0;
+
+struct file_data config_data = {};
 
 static int create_default_config(void);
 static int read_entire_file(const char *path, struct file_data *dest);
-static int split_into_lines(char *str, struct str **array_dest,
-	int *array_len_dest);
+static std::vector<std::string> split_string(const std::string& str,
+	char delimiter);
 
-int load_plugin(void)
+std::vector<std::string> quiz_files;
+
+enum class state {
+	startup,
+	quiz_selection,
+	in_quiz,
+};
+
+state current_state = state::startup;
+
+extern "C" int load_plugin(void)
 {
 	int error = 0;
 
@@ -64,30 +75,28 @@ int load_plugin(void)
 
 	printf("%s: Default config:\n\"%s\"\n", __FILE__, config_data.data);
 
-	error = split_into_lines(config_data.data, &quiz_files,
-		&quiz_file_count);
-	if (error) {
-		printf("%s: Failed to parse config data\n", __FILE__);
-	} else {
-		printf("%s: found %i quiz files in config.\n", __FILE__,
-			quiz_file_count);
-		for (int i = 0; i < quiz_file_count; ++i) {
-			printf("%i) ", i);
-			str_print(stdout, &quiz_files[i]);
-			fputc('\n', stdout);
-		}
+	std::string config{config_data.data};
+
+	quiz_files = split_string(config, '\n');
+
+	std::cout << "Configuration found these quizzes:\n";
+	for (const auto& quiz_file: quiz_files) {
+		std::cout << '\t' << quiz_file << '\n';
 	}
+
+	current_state = state::quiz_selection;
+	#error okay time to handle requests.
 
 	return error;
 }
 
-int
+extern "C" int
 unload_plugin(void)
 {
 	return 0;
 }
 
-int
+extern "C" int
 handle_post(struct request *r, int client)
 {
 	(void)r;
@@ -95,7 +104,7 @@ handle_post(struct request *r, int client)
 	return 0;
 }
 
-int
+extern "C" int
 handle_get(struct request *r, int client)
 {
 	(void)r;
@@ -113,7 +122,7 @@ create_default_config(void)
 		return errno? errno: EPERM;
 	}
 
-	if (fprintf(f, "%s", "[quizzes]\nexample.txt") < 0) {
+	if (fprintf(f, "%s", "example_quiz.txt") < 0) {
 		printf("Failed to write default value to %s: %i-%s\n",
 			CONFIG_FILE, errno, strerror(errno));
 		return errno? errno: EIO;
@@ -152,14 +161,14 @@ read_entire_file(const char *path, struct file_data *dest)
 
 	dest->len = length;
 	// +1 for null in case someone wants to print the contents.
-	dest->data = malloc((unsigned long)length + 1);
+	dest->data = (char*)malloc((unsigned long)length + 1);
 	if (!dest->data) {
 		printf("Failed to allocate block for file %s: %s\n", path,
 			strerror(errno));
 		error = errno? errno: ENOMEM;
 		goto cleanup;
 	}
-	memset(dest->data, 0, length + 1);
+	memset(dest->data, 0, (unsigned long)(length + 1));
 
 	items_read = fread(dest->data, 1, (unsigned long)dest->len, f);
 	if ((long)items_read != dest->len) {
@@ -186,47 +195,20 @@ good_cleanup:
 	return error;
 }
 
-static int
-split_into_lines(char *str, struct str **array_dest, int *array_len_dest)
+static std::vector<std::string>
+split_string(const std::string& str, char delimiter)
 {
-	int newline_count = 0;
-	int i;
-	int str_index;
-	int len;
-	struct str *strs;
-
-	for (i = 0; str[i]; ++i) {
-		if (str[i] == '\n') {
-			newline_count++;
+	std::vector<std::string> collection;
+	std::string::size_type prev = 0;
+	for (;;) {
+		auto position = str.find_first_of(delimiter, prev);
+		if (position == str.npos) {
+			collection.emplace_back(str.substr(prev));
+			return collection;
 		}
+
+		collection.emplace_back(str.substr(prev, position - prev));
+		prev = position + 1;
 	}
-	len = i;
-
-	strs = calloc((unsigned long)newline_count, sizeof(*strs));
-	if (!strs) {
-		return ENOMEM;
-	}
-
-	str_index = 0;
-	strs[str_index].s = str;
-	strs[str_index].len = len;
-	int prev = 0;
-	for (i = 0; i < len; ++i) {
-		if (str[i] == '\n') {
-			strs[str_index].len = i - prev;
-			str_index++;
-			assert(str_index < newline_count);
-			/* +1 to have it start beyond the '\n'. */
-			strs[str_index].s = str + i + 1;
-			strs[str_index].len = 0;
-			prev = i;
-		}
-	}
-	// Save the last str len, since the loop will end before it is set.
-	strs[str_index].len = i - prev;
-
-	*array_dest = strs;
-	*array_len_dest = newline_count;
-
-	return 0;
+	return collection;
 }

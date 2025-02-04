@@ -30,6 +30,9 @@ $(OUT): $(OBJS)
 %.$(SO): plugins/%.c
 	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
+%.$(SO): plugins/%.cpp
+	$(CXX) $(CXXFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
+
 analyze: crvr.c asl.c
 	clang-tidy crvr.c asl.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*
 
