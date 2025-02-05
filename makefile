@@ -30,7 +30,7 @@ $(OUT): $(OBJS)
 %.$(SO): plugins/%.c
 	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
-%.$(SO): plugins/%.cpp
+text_quizzer.$(SO): plugins/text_quizzer/text_quizzer.cpp
 	$(CXX) $(CXXFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
 analyze: crvr.c asl.c

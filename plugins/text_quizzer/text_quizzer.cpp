@@ -85,7 +85,6 @@ extern "C" int load_plugin(void)
 	}
 
 	current_state = state::quiz_selection;
-	#error okay time to handle requests.
 
 	return error;
 }
@@ -101,6 +100,12 @@ handle_post(struct request *r, int client)
 {
 	(void)r;
 	(void)client;
+
+	// Call parse_post_parameters to make them available.
+
+	// Call find_post_param to find what was selected.
+
+	// ASL then calls its asl_get to send the page with updated values.
 	return 0;
 }
 
@@ -109,6 +114,11 @@ handle_get(struct request *r, int client)
 {
 	(void)r;
 	(void)client;
+
+	// Load the page text
+
+	// Replace the text variables with their values.
+
 	return 0;
 }
 
