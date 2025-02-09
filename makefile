@@ -1,4 +1,4 @@
-.PHONY: all clean install uninstall test
+.PHONY: all clean install uninstall test tools
 	
 # config.mk doesn't exist by default. Either copy unix.mk or windows.mk to
 # config.mk or symlink it.
@@ -16,7 +16,12 @@ OBJS=\
 PLUGINS:=\
 	text_quizzer.$(SO)
 
-all: $(OUT) $(PLUGINS)
+CONVERTED_PAGES := \
+	text_quizzer/quiz_page.h \
+	text_quizzer/select_page_quiz.h \
+	text_quizzer/startup_page.h
+
+all: $(OUT) tools/html2c $(PLUGINS)
 
 pkg: crvr.tar.xz
 
@@ -27,10 +32,13 @@ crvr.tar.xz: crvr asl.html asl_done.html
 $(OUT): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
+%.h: %.html
+	tools/html2c $< > $@
+
 %.$(SO): plugins/%.c
 	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
-text_quizzer.$(SO): plugins/text_quizzer/text_quizzer.cpp
+text_quizzer.$(SO): plugins/text_quizzer/text_quizzer.cpp $(CONVERTED_PAGES)
 	$(CXX) $(CXXFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
 analyze: crvr.c asl.c
