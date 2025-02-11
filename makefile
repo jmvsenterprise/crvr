@@ -21,7 +21,11 @@ CONVERTED_PAGES := \
 	text_quizzer/select_page_quiz.h \
 	text_quizzer/startup_page.h
 
-all: $(OUT) tools/html2c $(PLUGINS)
+TOOLS := \
+	tools/html2c \
+	tools/html2cpp
+
+all: $(OUT) $(TOOLS) $(PLUGINS)
 
 pkg: crvr.tar.xz
 

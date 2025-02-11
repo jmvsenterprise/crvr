@@ -21,3 +21,4 @@ tests/
 *.dylib
 text_quizzer.conf
 tools/html2c
+tools/html2cpp

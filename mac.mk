@@ -11,7 +11,7 @@ DYLIB_FLAGS:=-dynamiclib -current_version 1.0 -compatibility_version 1.0 -I.
 
 BUILD=$(DEBUG_FLAGS)
 
-CXXFLAGS=$(BUILD) -std=c++17
+CXXFLAGS=$(BUILD) -std=c++20
 CFLAGS=$(BUILD) -std=c17 -Ibase
 
 LDFLAGS=$(SANITIZERS)

@@ -32,20 +32,6 @@ file_name_to_array_name(char *buf, size_t buf_len, const char *file_name)
 		if ((buf[index] == '.') || (buf[index] == ' ')) {
 			buf[index] = '_';
 		}
-		// Escape quote characters
-		if (buf[index] == '"') {
-			// Check that we aren't out of buffer space.
-			assert((index + 1 + string_len) > buf_len);
-			memmove(&buf[index + 1], &buf[index],
-				string_len - index);
-			buf[index] = '\\';
-			// Increment the index so it points at the '"' again.
-			// When we loop it'll move past it.
-			index++;
-			string_len++;
-			continue;
-			#error expected to see escaped quotes, but not seeing it.
-		}
 	}
 }
 
