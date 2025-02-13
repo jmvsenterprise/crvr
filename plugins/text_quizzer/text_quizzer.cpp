@@ -13,6 +13,7 @@ extern "C" {
 #include "utils.h"
 }
 
+#include <map>
 #include <string>
 #include <vector>
 #include <iostream>
@@ -22,6 +23,9 @@ extern "C" {
 #include "startup_page.h"
 
 #define CONFIG_FILE "text_quizzer.conf"
+
+std::map<std::string, std::variant<std::string, int, float>> variables;
+
 
 struct quiz_question {
 	std::string id;
@@ -39,11 +43,6 @@ struct file_data {
 
 struct file_data config_data = {};
 
-static int create_default_config(void);
-static int read_entire_file(const char *path, struct file_data *dest);
-static std::vector<std::string> split_string(const std::string& str,
-	char delimiter);
-
 std::vector<std::string> quiz_files;
 
 enum class state {
@@ -53,6 +52,14 @@ enum class state {
 };
 
 state current_state = state::startup;
+
+// Local functions.
+static int create_default_config(void);
+static int read_entire_file(const char *path, struct file_data *dest);
+static std::vector<std::string> split_string(const std::string& str,
+	char delimiter);
+static void replace_in_page(std::string& page);
+
 
 extern "C" int load_plugin(void)
 {
@@ -129,7 +136,7 @@ handle_get(struct request *r, int client)
 		page = startup_page;
 		break;
 	case state::quiz_selection:
-		page = select_page_quiz;
+		page = select_quiz_page;
 		break;
 	case state::in_quiz:
 		page = quiz_page;
@@ -137,7 +144,7 @@ handle_get(struct request *r, int client)
 	}
 
 	// Replace the text variables with their values.
-	repace_in_page(page, variables);
+	replace_in_page(page);
 
 	return send_data(client, ok_header, page.c_str(), page.length());
 }
@@ -246,121 +253,61 @@ split_string(const std::string& str, char delimiter)
 /*
  * Replace the variables found in buf with their values.
  */
-static int replace_in_page(std::string& page,
-	std::map<std::string, std::string>& variables)
+static void replace_in_page(std::string& page)
 {
-	for (;;) {
-		auto variable_start = find_first_of(page, '$');
-		if (variable_start == page.npos) {
+	for (std::string::size_type i = 0; i < page.length(); ++i) {
+		if (page.at(i) != '$')
+			continue;
+
+		// Found a potential variable, check if it is escaped.
+		if (i + 1 >= page.length()) {
+			// No more chars, but also no more text so we can't ID
+			// the variable anyway. Escape it and return.
+			page.insert(i, "$");
 			return;
 		}
+		// Can check if the var is escaped.
+		if (page.at(i + 1) == '$') {
+			// Its escaped, so continue, but jump past the escaped
+			// $, otherwise it'll look like its not escaped. +1
+			// should do. The loop will move us +2 total.
+			i++;
+			continue;
+		}
+
+		// Not escaped, so its a variable. Get its name.
+		std::string::size_type start = i;
+
 		// Variable ends at the next whitespace or symbol.
-		for (std::string::size_type end = variable_start;
-				end < page.length(); ++end) {
+		std::string::size_type end;
+		for (end = start; end < page.length(); ++end) {
 			if (!isalnum(page[end]))
 				break;
 		}
-		if (end == page.length()) {
-			end = page.npos;
-		}
 
 		// Lookup variable
-		std::string var_name = page.substr(variable_start,
-			end - variable_start);
-		std::string var_value = variables[var_name];
-
-		// Replace the variable name with the variable value.
-		replace_variable_with_value(page, variable_start, end,
-			var_value);
-	}
-};
-
-struct variable {
-	char name[256];
-	char *value;
-
-	struct variable *next;
-	struct variable *prev;
-};
-
-static replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap,
-	struct variable *variables)
-{
-	size_t dst = 0;
-	int result = 0;
-	char *var_start;
-
-	for (; (dst < *buf_len) && (*buf_len < buf_cap) && (result == 0);
-			++dst) {
-		// Look for the start of a variable
-		if (buf[dst] != '$') {
+		auto var_name = page.substr(start, end - start);
+		auto entry = variables.find(var_name);
+		if (entry == variables.end()) {
+			// Just escape the $
+			page.insert(start, "$");
+			// Jump past the escaped $. Like above, +1 should do.
+			// The loop ++ will make it +2.
+			i++;
 			continue;
 		}
-
-		// Found a variable
-		var_start = buf + dst;
-		printf("variable dst:%lu buf_len:%lu \"%.20s\"\n", dst,
-			*buf_len, var_start);
-		// Find end of variable.
-		for (var_end = var_start + 1; var_end < *buf_len; var_end++) {
-			if (!isalnum(buf[var_end]))
-				break;
+		// Otherwise we have the variable so replace the name with its
+		// value.
+		auto& values = entry->second;
+		std::string value{"unrecognized value"};
+		if (std::holds_alternative<int>(values)) {
+			value = std::to_string(std::get<int>(values));
+		} else if (std::holds_alternative<float>(values)) {
+			value = std::to_string(std::get<float>(values));
+		} else if (std::holds_alternative<std::string>(values)) {
+			value = std::get<std::string>(values);
 		}
 
-		struct variable var;
-		struct str var_name;
-		var_name.s = var_start;
-		var_name.len = var_end - var_start;
-
-		if (0 != find_variable(&var_name, &var)) {
-			// Not a variable.
-			continue;
-		}
-
-		// Found variable, replace its name with the value.
-		result = replace_var_with_value(var_start, buf_len, buf_cap,
-			var);
+		page.replace(start, end - start, value);
 	}
-	return result;
-}
-
-/*
- * Print the value of a variable to the buffer.
- *
- * buf - The buffer to replace the variable in.
- * buf_len - The current length of valid data in the buffer.
- * buf_cap - The max size the buffer can be. buf_len should be < buf_cap.
- * var_name - The name of the variable being replaced.
- * format - The format of the string to replace the variable with.
- * ... - Additional arguments that go into the format.
- *
- * Returns 0 if the variable was successfully replaced in the buffer.
- */
-int replace_var_with_value(char *buf, size_t *buf_len, const size_t buf_cap,
-	const struct variable *var)
-{
-	int result;
-	char var_str[KILOBYTE] = {0};
-	size_t var_len = strlen(var->value);
-	size_t buf_space;
-	size_t var_name_len = strlen(var->name);
-
-	/* Compute how much space is needed. */
-	buf_space = buf_cap - *buf_len;
-	if (var_len > buf_space) {
-		fprintf(stderr, "Need %lu more bytes in buffer.\n",
-			var_len - buf_space);
-		return ENOBUFS;
-	}
-
-	/* Move the rest of the buffer down and insert the variable. */
-	printf("var_len: %lu var_name_len: %lu *buf_len: %lu.\n", var_len,
-		var_name_len, *buf_len);
-	memmove(buf, buf - var_len + var_name_len, *buf_len + var_len);
-	*buf_len += var_len - var_name_len;
-
-	/* Write the variable in. */
-	memcpy(buf, var->value, strlen(var->value));
-
-	return result;
-}
+};
