@@ -4,28 +4,32 @@
 # config.mk or symlink it.
 include config.mk
 
+LIBRARY := libcrvr.a
+
+LDFLAGS := $(LDFLAGS) -L.
+LDLIBS := $(LDLIBS) -lcrvr
 OUT=crvr$(OUTEXT)
 OBJS=\
-	crvr.$(OBJ) \
 	asl.$(OBJ) \
 	http.$(OBJ) \
 	utils.$(OBJ) \
 	socket_layer.$(OBJ) \
 	base_defs.$(OBJ) \
 	plugins.$(OBJ)
+
 PLUGINS:=\
-	text_quizzer.$(SO)
+	quizzer.$(SO)
 
 CONVERTED_PAGES := \
-	plugins/text_quizzer/quiz_page.h \
-	plugins/text_quizzer/select_quiz_page.h \
-	plugins/text_quizzer/startup_page.h
+	plugins/quizzer/quiz_page.h \
+	plugins/quizzer/select_quiz_page.h \
+	plugins/quizzer/startup_page.h
 
 TOOLS := \
 	tools/html2c \
 	tools/html2cpp
 
-all: $(OUT) $(TOOLS) $(PLUGINS)
+all: $(LIBRARY) $(OUT) $(TOOLS) $(PLUGINS)
 
 pkg: crvr.tar.xz
 
@@ -33,8 +37,11 @@ crvr.tar.xz: crvr asl.html asl_done.html
 	tar -cf crvr.tar crvr asl.html asl_done.html
 	xz crvr.tar
 
-$(OUT): $(OBJS)
-	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
+$(LIBRARY): $(OBJS)
+	$(AR) -crs $@ $(OBJS)
+
+$(OUT): crvr.o $(LIBRARY)
+	$(CC) $(CFLAGS) crvr.o -o $@ $(LDFLAGS) $(LDLIBS)
 
 %.h: %.html
 	tools/html2cpp $^ > $@
@@ -42,7 +49,7 @@ $(OUT): $(OBJS)
 %.$(SO): plugins/%.c
 	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
-text_quizzer.$(SO): plugins/text_quizzer/text_quizzer.cpp $(CONVERTED_PAGES)
+quizzer.$(SO): plugins/quizzer/quizzer.cpp $(CONVERTED_PAGES)
 	$(CXX) $(CXXFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
 
 analyze: crvr.c asl.c

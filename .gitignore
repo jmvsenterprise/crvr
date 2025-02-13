@@ -22,3 +22,4 @@ tests/
 text_quizzer.conf
 tools/html2c
 tools/html2cpp
+libcrvr.a
