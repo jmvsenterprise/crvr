@@ -10,11 +10,16 @@
 extern "C" {
 #include "http.h"
 #include "str.h"
+#include "utils.h"
 }
 
 #include <string>
 #include <vector>
 #include <iostream>
+
+#include "quiz_page.h"
+#include "select_quiz_page.h"
+#include "startup_page.h"
 
 #define CONFIG_FILE "text_quizzer.conf"
 
@@ -33,8 +38,6 @@ struct file_data {
 };
 
 struct file_data config_data = {};
-
-#include "html_pages.h"
 
 static int create_default_config(void);
 static int read_entire_file(const char *path, struct file_data *dest);
@@ -305,9 +308,10 @@ static replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap,
 		}
 
 		struct variable var;
-		struct str var_name = {.s = var_start,
-			.len = var_end - var_start
-		};
+		struct str var_name;
+		var_name.s = var_start;
+		var_name.len = var_end - var_start;
+
 		if (0 != find_variable(&var_name, &var)) {
 			// Not a variable.
 			continue;
@@ -335,12 +339,11 @@ static replace_in_buf(char *buf, size_t *buf_len, const size_t buf_cap,
 int replace_var_with_value(char *buf, size_t *buf_len, const size_t buf_cap,
 	const struct variable *var)
 {
-	va_list args;
 	int result;
 	char var_str[KILOBYTE] = {0};
-	size_t var_len = var.value.len;
+	size_t var_len = strlen(var->value);
 	size_t buf_space;
-	size_t var_name_len = var.name.len;
+	size_t var_name_len = strlen(var->name);
 
 	/* Compute how much space is needed. */
 	buf_space = buf_cap - *buf_len;
@@ -357,7 +360,7 @@ int replace_var_with_value(char *buf, size_t *buf_len, const size_t buf_cap,
 	*buf_len += var_len - var_name_len;
 
 	/* Write the variable in. */
-	memcpy(buf, var.value.s, var.value.len);
+	memcpy(buf, var->value, strlen(var->value));
 
 	return result;
 }

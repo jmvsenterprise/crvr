@@ -17,9 +17,9 @@ PLUGINS:=\
 	text_quizzer.$(SO)
 
 CONVERTED_PAGES := \
-	text_quizzer/quiz_page.h \
-	text_quizzer/select_page_quiz.h \
-	text_quizzer/startup_page.h
+	plugins/text_quizzer/quiz_page.h \
+	plugins/text_quizzer/select_quiz_page.h \
+	plugins/text_quizzer/startup_page.h
 
 TOOLS := \
 	tools/html2c \
@@ -37,7 +37,7 @@ $(OUT): $(OBJS)
 	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS) $(LDLIBS)
 
 %.h: %.html
-	tools/html2c $< > $@
+	tools/html2cpp $^ > $@
 
 %.$(SO): plugins/%.c
 	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
@@ -70,6 +70,7 @@ clean:
 	$(RM) $(OUT)
 	$(RM) *.$(OBJ)
 	$(RM) crvr.tar.xz
+	$(RM) -f $(CONVERTED_PAGES)
 
 install: crvr
 	mkdir -p /usr/local/bin
