@@ -4,6 +4,8 @@
 # config.mk or symlink it.
 include config.mk
 
+PREFIX ?= /usr/local/bin
+
 LIBRARY := libcrvr.a
 
 LDFLAGS := $(LDFLAGS) -L.
@@ -80,8 +82,9 @@ clean:
 	$(RM) -f $(CONVERTED_PAGES)
 
 install: crvr
-	mkdir -p /usr/local/bin
-	cp crvr /usr/local/bin
+	mkdir -p $(PREFIX)
+	cp crvr $(PREFIX)
+	cp $(PLUGINS) $(PREFIX)
 
 uninstall:
 	if [ -e /usr/local/bin/crvr ]; rm /usr/local/bin/crvr
