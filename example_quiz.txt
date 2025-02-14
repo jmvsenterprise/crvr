@@ -1,0 +1,21 @@
+# This is a comment followed by an empty line
+
+# Next these are all single answer questions:
+What is 2 + 2?
+	4
+
+What is 3 + 3?
+ 6
+
+What is 9 * 9?
+    81
+
+# Next are multi-answer questions:
+What are factors of 4?
+	1
+	2
+	4
+
+Name two states of the US:
+	Tennessee
+	Virginia

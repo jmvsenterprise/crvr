@@ -13,10 +13,13 @@ extern "C" {
 #include "utils.h"
 }
 
+#include <algorithm>
+#include <fstream>
 #include <map>
 #include <string>
 #include <vector>
 #include <iostream>
+#include <random>
 
 #include "quiz_page.h"
 #include "select_quiz_page.h"
@@ -24,17 +27,14 @@ extern "C" {
 
 #define CONFIG_FILE "text_quizzer.conf"
 
-std::map<std::string, std::variant<std::string, int, float>> variables;
-
-
-struct quiz_question {
-	std::string id;
-	struct str question;
-	struct str answer;
-	unsigned long great_recalls;
-	unsigned long good_recalls;
-	unsigned long poort_recalls;
+struct question {
+	std::string question;
+	std::string answer;
 };
+
+std::vector<question> quiz_questions;
+
+std::map<std::string, std::variant<std::string, size_t, int, float>> variables;
 
 struct file_data {
 	char *data;
@@ -54,12 +54,21 @@ enum class state {
 state current_state = state::startup;
 
 // Local functions.
+static void clear_question(question& q);
 static int create_default_config(void);
+static bool has_indentation(const std::string& line);
+static int load_quiz(const std::string& quiz_name);
 static int read_entire_file(const char *path, struct file_data *dest);
+static bool question_is_empty(const question& q);
+static void replace_in_page(std::string& page);
 static std::vector<std::string> split_string(const std::string& str,
 	char delimiter);
-static void replace_in_page(std::string& page);
 
+std::ostream& operator<<(std::ostream& os, const question& q)
+{
+	return os << "question: " << q.question << "\nanswer: " << q.answer <<
+		'\n';
+}
 
 extern "C" int load_plugin(void)
 {
@@ -93,9 +102,13 @@ extern "C" int load_plugin(void)
 	quiz_files = split_string(config, '\n');
 
 	std::cout << "Configuration found these quizzes:\n";
-	for (const auto& quiz_file: quiz_files) {
+	std::string quiz_var;
+	for (const auto& quiz_file : quiz_files) {
 		std::cout << '\t' << quiz_file << '\n';
+		quiz_var += "<li><input type=\"submit\" name=\"button\" id=\"" +
+			quiz_file + "\" value=\"" + quiz_file + "\"></li>\n";
 	}
+	variables["quizzes"] = quiz_var;
 
 	current_state = state::quiz_selection;
 
@@ -105,20 +118,6 @@ extern "C" int load_plugin(void)
 extern "C" int
 unload_plugin(void)
 {
-	return 0;
-}
-
-extern "C" int
-handle_post(struct request *r, int client)
-{
-	(void)r;
-	(void)client;
-
-	// Call parse_post_parameters to make them available.
-
-	// Call find_post_param to find what was selected.
-
-	// ASL then calls its asl_get to send the page with updated values.
 	return 0;
 }
 
@@ -149,6 +148,113 @@ handle_get(struct request *r, int client)
 	return send_data(client, ok_header, page.c_str(), page.length());
 }
 
+extern "C" int
+handle_post(struct request *r, int client)
+{
+	(void)client;
+
+	// Call parse_post_parameters to make them available.
+	int error = parse_post_parameters(r);
+	if (error) {
+		std::cout << "Error parsing post params: " << error << '\n';
+		return error;
+	}
+
+	// Call find_post_param to find what was selected.
+	switch (current_state) {
+	case state::startup:
+		// Nothing to do.
+		break;
+	case state::quiz_selection:
+		{
+			http_param button = {};
+			if (find_post_param(r, "button", &button)) {
+				std::cerr << "Did not find button\n";
+				return EINVAL;
+			}
+			std::string value(button.value.s,
+				(size_t)button.value.len);
+			// Confirm the quiz file is in our list.
+			bool good_quiz_file = false;
+			for (const auto& quiz_file : quiz_files) {
+				if (value == quiz_file) {
+					good_quiz_file = true;
+					break;
+				}
+			}
+			if (good_quiz_file) {
+				int error = load_quiz(value);
+				if (error) {
+					std::cerr << "Failed to load quiz " <<
+						value << ": " << error << '\n';
+				}
+			} else {
+				std::cout << "Unrecognized quiz file: \"" <<
+					value << "\"\n";
+			}
+		}
+		break;
+	case state::in_quiz:
+		{
+			// See which button the user pressed. We won't do
+			// anything with this right now, but get it.
+			http_param button = {};
+			if (find_post_param(r, "button", &button)) {
+				std::cerr << "Did not find button\n";
+				return EINVAL;
+			}
+			std::string value(button.value.s,
+				(size_t)button.value.len);
+			std::cout << "user pressed " << value << '\n';
+
+			// Remove the card from the list if they chose 'great'
+			if (value == "great") {
+				quiz_questions.erase(quiz_questions.begin());
+			} else if (value == "good") {
+				// Put the card at the end of the deck if they
+				// chose "good".
+				if (quiz_questions.size() > 1) {
+					question q = quiz_questions.at(0);
+					quiz_questions.erase(quiz_questions.begin());
+					quiz_questions.emplace_back(q);
+				}
+			} else if (value == "poor") {
+				// If its poor, swap this card with the next
+				// one.
+				if (quiz_questions.size() > 1) {
+					std::swap(quiz_questions.at(0),
+						quiz_questions.at(1));
+				}
+			}
+
+			// Is the quiz done?
+			if (quiz_questions.size() == 0) {
+				// Yep, go back to the quiz selection screen!
+				current_state = state::quiz_selection;
+			} else {
+				// Update variables.
+				variables["questions_remaining"] =
+					quiz_questions.size();
+				const auto& question =
+					quiz_questions.at(0);
+				variables["question"] = question.question;
+				variables["answer"] = question.answer;
+			}
+		}
+		break;
+	}
+
+	// ASL then calls its asl_get to send the page with updated values.
+	return handle_get(r, client);
+}
+
+static void
+clear_question(question& q)
+{
+	q.question.clear();
+	q.answer.clear();
+}
+
 static int
 create_default_config(void)
 {
@@ -166,6 +272,132 @@ create_default_config(void)
 	}
 
 	fclose(f);
+
+	return 0;
+}
+
+static bool
+has_indentation(const std::string& line)
+{
+	if (line.empty()) return false;
+	// If the first char is a space, its indented.
+	if (line.length() > 0)
+		return isspace(line.at(0));
+	// Another empty line case I guess.
+	return false;
+}
+
+static bool
+question_is_empty(const question& q)
+{
+	return q.question.empty() && q.answer.empty();
+}
+
+static int
+load_quiz(const std::string& quiz_name)
+{
+	std::cout << "loading quiz " << quiz_name << '\n';
+	/*
+	 * Loop through every line of the file looking for things formatted
+	 * like this:
+	 *
+	 *    # A comment
+	 *    Question[:?]\n
+	 *    [ \t]*answer\n
+	 *
+	 * Questions end with either an optional colon (':'), an optional
+	 * question mark ('?') and a mandatory newline ('\n').
+	 *
+	 * Answers are indented after a question.
+         *
+	 * There can be multiple answer lines under a question and they should
+	 * all be included as part of the answer.
+	 */
+	std::fstream quiz{quiz_name, std::ios::in | std::ios::binary};
+	std::vector<std::string> lines;
+	for (std::string line; std::getline(quiz, line); ) {
+		std::cout << "Considering \"" << line << "\"...";
+		// Skip empty lines.
+		if (line.empty()) {
+			std::cout << "empty line\n";
+			continue;
+		}
+		// Skip comment lines.
+		bool comment = false;
+		for (size_t i = 0; i < line.length(); ++i) {
+			// Loop through the line until we find the first non-
+			// space character. If that is a '#' its a comment.
+			if (isspace(line.at(i)))
+				continue;
+			if (line.at(i) == '#') {
+				comment = true;
+				break;
+			}
+		}
+		if (comment) {
+			std::cout << "comment\n";
+			continue;
+		}
+		std::cout << "line\n";
+		lines.emplace_back(line);
+	}
+
+	// Now we have a list of all the lines from the file. Go through each
+	// line and create a question if the line starts without indentation.
+	// Every line after that has indentation is part of the answer.
+	question q;
+	quiz_questions.clear();
+	for (size_t i = 0; i < lines.size(); ++i) {
+		if (!has_indentation(lines.at(i))) {
+			if (!question_is_empty(q)) {
+				quiz_questions.emplace_back(q);
+				clear_question(q);
+			}
+			q.question = lines.at(i);
+		} else {
+			if (!q.answer.empty())
+				q.answer += '\n';
+			q.answer += lines.at(i);
+		}
+	}
+	// Save the last question being built.
+	if (!question_is_empty(q)) {
+		quiz_questions.emplace_back(q);
+	}
+
+	std::cout << "Loaded these questions:\n";
+	for (const auto& q : quiz_questions) {
+		std::cout << q << '\n';
+	}
+	std::cout << "Original question count: " << quiz_questions.size() <<
+		'\n';
+
+	// Duplicate and reverse every question.
+	const size_t original_end = quiz_questions.size();
+	for (size_t i = 0; i < original_end; ++i) {
+		question flop;
+		flop.question = quiz_questions.at(i).answer;
+		flop.answer = quiz_questions.at(i).question;
+		quiz_questions.emplace_back(flop);
+	}
+	std::cout << "Original + flopped question count: " <<
+		quiz_questions.size() << '\n';
+
+	// Shuffle the questions
+	std::random_device device;
+	std::mt19937 randomizer(device());
+	std::shuffle(quiz_questions.begin(), quiz_questions.end(), randomizer);
+
+	std::cout << "Questions shuffled.\n";
+
+	// Set up the variables needed for the quiz page
+	variables["quiz_title"] = quiz_name;
+	variables["questions_remaining"] = quiz_questions.size();
+
+	variables["question"] = quiz_questions.at(0).question;
+	variables["answer"] = quiz_questions.at(0).answer;
+
+	current_state = state::in_quiz;
 
 	return 0;
 }
@@ -275,20 +507,24 @@ static void replace_in_page(std::string& page)
 			continue;
 		}
 
-		// Not escaped, so its a variable. Get its name.
-		std::string::size_type start = i;
+		// Not escaped, so its a variable. Get its name. Move past the
+		// $ first though so +1.
+		std::string::size_type start = i + 1;
 
-		// Variable ends at the next whitespace or symbol.
+		// Variable ends at the next whitespace or symbol. But check for
+		// an underscore too, which continues the name.
 		std::string::size_type end;
 		for (end = start; end < page.length(); ++end) {
-			if (!isalnum(page[end]))
+			if (!isalnum(page[end]) && (page[end] != '_'))
 				break;
 		}
 
 		// Lookup variable
 		auto var_name = page.substr(start, end - start);
+		std::cout << "Looking for variable \"" << var_name << "\"...";
 		auto entry = variables.find(var_name);
 		if (entry == variables.end()) {
+			std::cout << "not found\n";
 			// Just escape the $
 			page.insert(start, "$");
 			// Jump past the escaped $. Like above, +1 should do.
@@ -296,6 +532,7 @@ static void replace_in_page(std::string& page)
 			i++;
 			continue;
 		}
+		std::cout << "found!\n";
 		// Otherwise we have the variable so replace the name with its
 		// value.
 		auto& values = entry->second;
@@ -306,8 +543,11 @@ static void replace_in_page(std::string& page)
 			value = std::to_string(std::get<float>(values));
 		} else if (std::holds_alternative<std::string>(values)) {
 			value = std::get<std::string>(values);
+		} else if (std::holds_alternative<size_t>(values)) {
+			value = std::to_string(std::get<size_t>(values));
 		}
 
-		page.replace(start, end - start, value);
+		// +1 because we are starting at the '$' which is at i.
+		page.replace(i, end - start + 1, value);
 	}
 };
