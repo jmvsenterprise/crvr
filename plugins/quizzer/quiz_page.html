@@ -11,7 +11,7 @@
     <h1>$quiz_title - $questions_remaining</h1>
     <div id="front_div">
       <h2>Question:</h2>
-      <p>$question</p>
+      <pre>$question</pre>
       <p>
         <input type="button" id="reveal_btn" name="reveal" onclick="reveal()"
 	  value="Reveal">
@@ -19,7 +19,7 @@
     </div>
     <div id="back_div" style="display:none;">
       <h2>Answer</h2>
-      <p>$answer</p>
+      <pre>$answer</pre>
       <p>How confident were you?</p>
       <form method="post" action="/quizzer.html">
         <input type="submit" name="button" id="poor_button" value="poor">

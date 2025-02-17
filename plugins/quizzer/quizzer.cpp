@@ -280,9 +280,14 @@ static bool
 has_indentation(const std::string& line)
 {
 	if (line.empty()) return false;
-	// If the first char is a space, its indented.
-	if (line.length() > 0)
-		return isspace(line.at(0));
+	// If the first char is whitespace, a asterisk, a hypen or a digit,
+	// its indented.
+	if (line.length() > 0) {
+		if (isspace(line.at(0)) || line.at(0) == '*' ||
+			line.at(0) == '-' || isdigit(line.at(0))) {
+			return true;
+		}
+	}
 	// Another empty line case I guess.
 	return false;
 }

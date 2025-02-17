@@ -1,4 +1,4 @@
-# This is a comment followed by an empty line
+# This is an example quiz file
 
 # Next these are all single answer questions:
 What is 2 + 2?
@@ -19,3 +19,5 @@ What are factors of 4?
 Name two states of the US:
 	Tennessee
 	Virginia
+
+
