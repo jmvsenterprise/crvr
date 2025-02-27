@@ -1,6 +1,7 @@
 /**
  * Copyright (C) 2025 Joseph M Vrba
  */
+#include <assert.h>
 #include <errno.h>
 #include <ctype.h>
 #include <stdio.h>
@@ -148,6 +149,32 @@ handle_get(struct request *r, int client)
 	return send_data(client, ok_header, page.c_str(), page.length());
 }
 
+static void
+handle_poor_value(std::vector<question>& questions)
+{
+	// If there are no other questions, just show this question again.
+	if (questions.size() == 1) {
+		return;
+	}
+
+	// Otherwise move the question 1-5 questions out. First check if we
+	// have less than 5 questions left:
+	long distance;
+	if (questions.size() < 5) {
+		// We do, so just move move it among those questions. + 1
+		// because we want to move it at least one spot.
+		assert(questions.size() < LONG_MAX);
+		distance = rand() % (long)questions.size() + 1;
+	} else {
+		// Otherwise move it 1-5 questions out.
+		distance = rand() % 5 + 1;
+	}
+
+	question q = questions.at(0);
+	questions.insert(questions.begin() + distance, q);
+	questions.erase(questions.begin());
+}
+
 extern "C" int
 handle_post(struct request *r, int client)
 {
@@ -219,12 +246,7 @@ handle_post(struct request *r, int client)
 					quiz_questions.emplace_back(q);
 				}
 			} else if (value == "poor") {
-				// If its poor, swap this card with the next
-				// one.
-				if (quiz_questions.size() > 1) {
-					std::swap(quiz_questions.at(0),
-						quiz_questions.at(1));
-				}
+				handle_poor_value(quiz_questions);
 			}
 
 			// Is the quiz done?
