@@ -3,6 +3,16 @@
 #include <stdio.h>
 #include <string.h>
 
+#if ! _POSIX_C_SOURCE >= 200809L || ! _GNU_SOURCE
+size_t strnlen(const char *s, size_t maxlen)
+{
+	size_t len = 0;
+	for (; *s && len < maxlen; s++)
+		len++;
+	return len;
+}
+#endif
+
 static void
 file_name_to_array_name(char *buf, size_t buf_len, const char *file_name)
 {
@@ -11,7 +21,8 @@ file_name_to_array_name(char *buf, size_t buf_len, const char *file_name)
 	size_t string_len;
 
 	memset(buf, 0, buf_len);
-	string_len = strlcpy(buf, file_name, buf_len - 1);
+	(void)strncpy(buf, file_name, buf_len - 1);
+	string_len = strnlen(buf, buf_len);
 
 	// Find the last '/' in the path.
 	last_slash = buf_len;
@@ -39,7 +50,7 @@ int convert_file(const char *file_name)
 {
 	char buf[4096];
 	size_t bytes_to_read;
-	size_t eol;
+	size_t eol = 0;
 	size_t line_start = 0;
 	size_t bytes_read;
 	size_t bytes_written;
