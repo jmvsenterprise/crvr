@@ -31,6 +31,8 @@ TOOLS := \
 	tools/html2c \
 	tools/html2cpp
 
+CONV := tools/html2c
+
 all: $(LIBRARY) $(OUT) $(TOOLS) $(PLUGINS)
 
 pkg: crvr.tar.xz
@@ -57,8 +59,8 @@ quizzer.$(SO): plugins/quizzer/quizzer.cpp $(CONVERTED_PAGES)
 analyze: crvr.c asl.c
 	clang-tidy crvr.c asl.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*
 
-test: tests crvr tests/asl_done.html tests/asl.html tests/index.html tests/image.png
-	cd tests/ && gdb ../crvr
+test: $(CONV) test.sh
+	./test.sh
 
 tests/asl_done.html: asl_done.html
 	cp -f $^ $@

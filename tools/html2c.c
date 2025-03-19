@@ -48,78 +48,71 @@ file_name_to_array_name(char *buf, size_t buf_len, const char *file_name)
 
 int convert_file(const char *file_name)
 {
-	char buf[4096];
-	size_t bytes_to_read;
+	char *buf = NULL;
+	long buf_len = 0;
 	size_t eol = 0;
 	size_t line_start = 0;
 	size_t bytes_read;
 	size_t bytes_written;
 	FILE *f;
+	int exit_code = 0;
 
+	// Open the file, figure out how big it is and read it all in.
 	f = fopen(file_name, "rb");
-	if (!f) {
+	if (f) {
+		exit_code = parse_file(f, file_name);
+		fclose(f);
+	} else {
 		return errno? errno : EINVAL;
+	}
+
+	return exit_code;
+}
+
+int parse_file(FILE *f, const char *file_name)
+{
+	if (fseek(f, 0, SEEK_END) < 0) {
+		perror("Failed to seek in file");
+		return EIO;
+	}
+	buf_len = ftell(f);
+	if (buf_len < 0) {
+		perror("Failed to get file length");
+		return EIO;
+	}
+	rewind(f);
+
+	buf = malloc(buf_len);
+	if (!buf) {
+		fprintf(stderr, "Could not allocate buffer: %s\n",
+			strerror(errno));
+		return ENOMEM;
+	}
+
+	size_t bytes_read = fread(buf, 1, buf_len, f);
+	if (bytes_read != (size_t)buf_len) {
+		perror("Failed to read in the whole file!");
+		return EIO;
 	}
 
 	file_name_to_array_name(buf, sizeof(buf), file_name);
 
-	// Print the array name and the very first quote.
-	printf("const char %s[] = \n\"", buf);
-	bytes_to_read = sizeof(buf);
-	while (!feof(f) && !ferror(f)) {
-		bytes_read = fread(buf, 1, bytes_to_read, f);
-		if (!bytes_read) continue;
+	// Print the array name.
+	printf("const char %s[] = \n", buf);
 
-		// Loop through the buffer until we get to the end. Everytime
-		// we find a \n, print the whole line, end it with a quote and
-		// new line. Then start the next line with its opening quote.
-		line_start = 0;
-		for (eol = 0; eol < bytes_read; ++eol) {
-			if (buf[eol] == '\n') {
-				// Print the line.
-				bytes_written = fwrite(&buf[line_start], 1,
-					eol - line_start, stdout);
-				if (bytes_written != (eol - line_start)) {
-					printf("Failed to write %lu bytes. Wrote %lu bytes. Errno=%i\n",
-						(eol - line_start),
-						bytes_written, errno);
-					return EIO;
-				}
-				printf("\"\n\"");
-				line_start = eol + 1;
-				continue;
-			}
-		}
-
-		/*
-		 * The current line might be split by the end of the buffer. If
-		 * so, move the current line to the front of the buffer, then
-		 * read in more from the file to get the next line.
-		 */
-		if (line_start < eol) {
-			// Yeah need to preserve the data from the current line.
-			// Move it to the front.
-			memmove(buf, &buf[line_start], eol - line_start);
-			// Reset the indexes since we moved the data.
-			eol = eol - line_start;
-			line_start = 0;
-			// Read in data to fill the buffer.
-			bytes_to_read = sizeof(buf) - eol;
-		}
+	// Read out each line, surrounding them in quotes and indenting by two
+	// spaces.
+	for (long i = 0; i < buf_len; ++i) {
+		printf("\t\"");
+		long line_start = i;
+		for (; (i < buf_len) && (buf[i] != '\n'); ++i);
+		printf("\"%.*s\"", i - line_start, buf + line_start);
+		// Skip past the \n.
+		i++
 	}
 
-	// Print the final line and quote.
-	if (eol != line_start) {
-		bytes_written = fwrite(&buf[line_start], 1, eol - line_start,
-			stdout);
-		if (bytes_written != (eol - line_start)) {
-			printf("Failed to write %lu bytes. Wrote %lu bytes. Errno=%i\n",
-				(eol - line_start), bytes_written, errno);
-			return EIO;
-		}
-	}
-
-	fclose(f);
+	// Close the array.
+	printf("};\n");
 
 	return 0;
 }
