@@ -1,7 +1,10 @@
 #include <assert.h>
 #include <errno.h>
+#include <stdlib.h>
 #include <stdio.h>
 #include <string.h>
+
+int parse_file(FILE *f, const char *file_name);
 
 #if ! _POSIX_C_SOURCE >= 200809L || ! _GNU_SOURCE
 size_t strnlen(const char *s, size_t maxlen)
@@ -13,14 +16,21 @@ size_t strnlen(const char *s, size_t maxlen)
 }
 #endif
 
-static void
+static int
 file_name_to_array_name(char *buf, size_t buf_len, const char *file_name)
 {
 	size_t index;
 	size_t last_slash;
 	size_t string_len;
 
+	if (buf_len < strlen(file_name)) {
+		fprintf(stderr, "File name \"%s\" too long. %lu bytes max.\n",
+			file_name, buf_len);
+		return EINVAL;
+	}
+
 	memset(buf, 0, buf_len);
+	// -1 to keep the null.
 	(void)strncpy(buf, file_name, buf_len - 1);
 	string_len = strnlen(buf, buf_len);
 
@@ -44,16 +54,12 @@ file_name_to_array_name(char *buf, size_t buf_len, const char *file_name)
 			buf[index] = '_';
 		}
 	}
+
+	return 0;
 }
 
 int convert_file(const char *file_name)
 {
-	char *buf = NULL;
-	long buf_len = 0;
-	size_t eol = 0;
-	size_t line_start = 0;
-	size_t bytes_read;
-	size_t bytes_written;
 	FILE *f;
 	int exit_code = 0;
 
@@ -71,6 +77,9 @@ int convert_file(const char *file_name)
 
 int parse_file(FILE *f, const char *file_name)
 {
+	char *buf = NULL;
+	long buf_len = 0;
+
 	if (fseek(f, 0, SEEK_END) < 0) {
 		perror("Failed to seek in file");
 		return EIO;
@@ -82,37 +91,50 @@ int parse_file(FILE *f, const char *file_name)
 	}
 	rewind(f);
 
-	buf = malloc(buf_len);
+	buf = malloc((size_t)buf_len);
 	if (!buf) {
 		fprintf(stderr, "Could not allocate buffer: %s\n",
 			strerror(errno));
 		return ENOMEM;
 	}
 
-	size_t bytes_read = fread(buf, 1, buf_len, f);
+	size_t bytes_read = fread(buf, 1, (size_t)buf_len, f);
 	if (bytes_read != (size_t)buf_len) {
 		perror("Failed to read in the whole file!");
+		free(buf);
 		return EIO;
 	}
 
-	file_name_to_array_name(buf, sizeof(buf), file_name);
+	char array_name[1024] = {0};
+	int error = file_name_to_array_name(array_name, sizeof(array_name),
+		file_name);
+	if (error) {
+		fprintf(stderr, "Failed to parse array name: %i\n", error);
+		free(buf);
+		return error;
+	}
 
 	// Print the array name.
-	printf("const char %s[] = \n", buf);
+	printf("const char %s[] = {\n", array_name);
 
 	// Read out each line, surrounding them in quotes and indenting by two
-	// spaces.
+	// spaces. To do this, just find newlines and replace them with NULLs
+	// so the strings are easy to print.
 	for (long i = 0; i < buf_len; ++i) {
-		printf("\t\"");
-		long line_start = i;
+		// Print the tab and an opening quote.
+		char *line_start = buf + i;
 		for (; (i < buf_len) && (buf[i] != '\n'); ++i);
-		printf("\"%.*s\"", i - line_start, buf + line_start);
-		// Skip past the \n.
-		i++
+		if (i < buf_len) {
+			buf[i] = 0;
+		}
+		// Print the closing quote and newline.
+		printf("\t\"%s\"\n", line_start);
 	}
 
 	// Close the array.
 	printf("};\n");
+
+	free(buf);
 
 	return 0;
 }

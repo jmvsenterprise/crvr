@@ -29,7 +29,7 @@ CONVERTED_PAGES := \
 
 TOOLS := \
 	tools/html2c \
-	tools/html2cpp
+	#tools/html2cpp
 
 CONV := tools/html2c
 
@@ -48,7 +48,7 @@ $(OUT): crvr.o $(LIBRARY)
 	$(CC) $(CFLAGS) crvr.o -o $@ $(LDFLAGS) $(LDLIBS)
 
 %.h: %.html
-	tools/html2cpp $^ > $@
+	tools/html2c $^ > $@
 
 %.$(SO): plugins/%.c
 	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
