@@ -1,0 +1,4 @@
+const char test1_html[] = {
+	"<html>"
+	"</html>"
+};

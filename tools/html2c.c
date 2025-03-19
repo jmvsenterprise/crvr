@@ -122,13 +122,30 @@ int parse_file(FILE *f, const char *file_name)
 	// so the strings are easy to print.
 	for (long i = 0; i < buf_len; ++i) {
 		// Print the tab and an opening quote.
+		printf("\t\"");
 		char *line_start = buf + i;
-		for (; (i < buf_len) && (buf[i] != '\n'); ++i);
+		for (; (i < buf_len) && (buf[i] != '\n'); ++i) {
+			switch (buf[i]) {
+			case '"': // fallthrough
+			case '\'':
+				// Print the string to this point.
+				char c = buf[i];
+				buf[i] = 0;
+				printf("%s", line_start);
+				// print an escape.
+				putchar('\\');
+				// put the char back and continue with the line
+				// from here.
+				buf[i] = c;
+				line_start = buf + i;
+				break;
+			}
+		}
 		if (i < buf_len) {
 			buf[i] = 0;
 		}
-		// Print the closing quote and newline.
-		printf("\t\"%s\"\n", line_start);
+		// Print the rest of the line, the closing quote and newline.
+		printf("%s\"\n", line_start);
 	}
 
 	// Close the array.

@@ -16,10 +16,11 @@ config.mk
 server.tar.xz
 .DS_Store
 crvr
-tests/
 *.swo
 *.dylib
-text_quizzer.conf
+quizzer.conf
 tools/html2c
 tools/html2cpp
 libcrvr.a
+# Ignore output from html2c test runs
+tools/tests/*.html.out
