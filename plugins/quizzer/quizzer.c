@@ -70,9 +70,10 @@ enum state {
 enum state current_state = STARTUP;
 
 // Local functions.
+static struct variable *new_variable(const char *var_name);
 static void clear_question(struct question *q);
 static int create_default_config(void);
-static bool has_indentation(const struct str *line);
+static int has_indentation(const struct str *line);
 static int load_quiz(const struct str *quiz_name);
 static int read_entire_file(const char *path, struct file_data *dest);
 static bool question_is_empty(const struct question *q);
@@ -83,9 +84,9 @@ static int split_string(const struct str *str, struct str_array *strs,
 static void print_question(FILE *f, struct question *q)
 {
 	fprintf(f, "question: ");
-	str_print(f, q->question);
+	str_print(f, &q->question);
 	fprintf(f, "\nanswer: ");
-	str_print(f, q->answer);
+	str_print(f, &q->answer);
 	fputc('\n', f);
 }
 
@@ -118,7 +119,7 @@ int load_plugin(void)
 
 	struct str config = {.s = config_data.data, .len = config_data.len };
 
-	int error = split_string(config, &quiz_files, '\n');
+	error = split_string(&config, &quiz_files, '\n');
 
 	printf("Configuration found these quizzes:\n");
 	struct variable *quizzes = new_variable("quizzes");

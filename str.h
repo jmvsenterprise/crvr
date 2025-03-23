@@ -28,6 +28,12 @@ struct str {
 	long len;
 };
 
+struct dstr {
+	char *buf;
+	long cap;
+	long len;
+};
+
 /* -1 for \0 */
 #define STR(string) (struct str){\
 	string,\
