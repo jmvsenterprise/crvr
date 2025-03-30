@@ -16,7 +16,7 @@
 #include "select_quiz_page.h"
 #include "startup_page.h"
 
-#define CONFIG_FILE "text_quizzer.conf"
+#define CONFIG_FILE "quizzer.conf"
 
 struct question {
 	struct str question;
@@ -53,13 +53,17 @@ struct file_data {
 	long len;
 };
 
-struct file_data config_data = {};
+struct file_data config_data = {0};
+struct file_data quiz_file = {0};
 
 struct str_array {
 	long count;
 	long cap;
 	struct str *strs;
-} quiz_files = {0};
+};
+
+struct str_array quiz_files = {0};
+struct str_array lines = {0};
 
 enum state {
 	STARTUP,
@@ -70,14 +74,24 @@ enum state {
 enum state current_state = STARTUP;
 
 // Local functions.
-static struct variable *new_variable(const char *var_name);
 static void clear_question(struct question *q);
 static int create_default_config(void);
 static int has_indentation(const struct str *line);
 static int load_quiz(const struct str *quiz_name);
+static int move_front_q_to(long offset);
+/*
+ * Lookup and return the variable with the specified name. If the variable
+ * doesn't exist, create it and return it.
+ */
+static struct variable *get_variable(const char *var_name);
 static int read_entire_file(const char *path, struct file_data *dest);
-static bool question_is_empty(const struct question *q);
-static void replace_in_page(struct str *page);
+/*
+ * Remove the first q in the questions array, moving all the questions after
+ * it forward.
+ */
+static int remove_first_q(void);
+static int question_is_empty(const struct question *q);
+static void replace_in_page(struct dstr *page);
 static int split_string(const struct str *str, struct str_array *strs,
 	char delimiter);
 
@@ -122,18 +136,22 @@ int load_plugin(void)
 	error = split_string(&config, &quiz_files, '\n');
 
 	printf("Configuration found these quizzes:\n");
-	struct variable *quizzes = new_variable("quizzes");
+	struct variable *quizzes = get_variable("quizzes");
 	quizzes->type = VT_DSTR;
 	struct dstr *quiz_list_html = &quizzes->data.as_dstr;
-	*quiz_list_html = {0};
+	dstr_free(quiz_list_html);
+	*quiz_list_html = (struct dstr){0};
+
 	for (long i = 0; i < quiz_files.count; i++) {
 		struct str *quiz_file = quiz_files.strs + i;
 		putchar('\t');
-		str_print(quiz_file);
-		dstr_append_cstr(
+		str_print(stdout, quiz_file);
+		dstr_append_cstr(quiz_list_html, 
 			"<li><input type=\"submit\" name=\"button\" id=\"");
-		dstr_append_str(quiz_file);
-		dstr_append_cstr("\" value=\"" + quiz_file + "\"></li>\n");
+		dstr_append_str(quiz_list_html, quiz_file);
+		dstr_append_cstr(quiz_list_html, "\" value=\"");
+		dstr_append_str(quiz_list_html, quiz_file);
+		dstr_append_cstr(quiz_list_html, "\"></li>\n");
 	}
 
 	current_state = QUIZ_SELECTION;
@@ -141,8 +159,13 @@ int load_plugin(void)
 	return error;
 }
 
+int
 unload_plugin(void)
 {
+	free_variables();
+	free_questions();
+	free_lines();
+	free_quiz();
 	return 0;
 }
 
@@ -158,18 +181,18 @@ handle_get(struct request *r, int client)
 	// Load the page text
 	switch (current_state) {
 	case STARTUP:
-		error = dstr_append(&page, startup_page);
+		error = dstr_append_cstr(&page, startup_page_html);
 		break;
 	case QUIZ_SELECTION:
-		error = dstr_append(&page, select_quiz_page);
+		error = dstr_append_cstr(&page, select_quiz_page_html);
 		break;
 	case IN_QUIZ:
-		error = dstr_append(&page, quiz_page);
+		error = dstr_append_cstr(&page, quiz_page_html);
 		break;
 	}
 
 	if (error) {
-		fprintf(stderr, "Failed to load page! %li\n", error);
+		fprintf(stderr, "Failed to load page! %i\n", error);
 		dstr_free(&page);
 		return error;
 	}
@@ -177,7 +200,7 @@ handle_get(struct request *r, int client)
 	// Replace the text variables with their values.
 	replace_in_page(&page);
 
-	return send_data(client, ok_header, &page);
+	return send_data(client, ok_header, page.s, (size_t)page.len);
 }
 
 static void
@@ -215,22 +238,22 @@ handle_quiz_selection_post(struct request *r)
 	long good_quiz_file = 0;
 	for (long i = 0; i < quiz_files.count; ++i) {
 		struct str *quiz_file = quiz_files.strs + i;
-		if (str_cmp(&button->value, quiz_file) == 0) {
+		if (str_cmp(&button.value, quiz_file) == 0) {
 			good_quiz_file = 1;
 			break;
 		}
 	}
 	if (good_quiz_file) {
-		int error = load_quiz(button->value);
+		int error = load_quiz(&button.value);
 		if (error) {
 			fprintf(stderr, "Failed to load quiz ");
-			str_print(stderr, &button->value);
+			str_print(stderr, &button.value);
 			fprintf(stderr, "%i\n", error);
 			return error;
 		}
 	} else {
 		fprintf(stderr, "Unrecognized quiz file: \"");
-		str_print(stderr, &button->value);
+		str_print(stderr, &button.value);
 		fprintf(stderr, "\"\n");
 		return 1;
 	}
@@ -248,20 +271,20 @@ handle_in_quiz_post(struct request *r)
 		return EINVAL;
 	}
 	printf("User pressed ");
-	str_print(stdout, &button->value);
+	str_print(stdout, &button.value);
 	putchar('\n');
 
 	// Remove the card from the list if they chose 'great'
-	if (str_cmp_cstr(&button->value, "great") == 0) {
+	if (str_cmp_cstr(&button.value, "great") == 0) {
 		remove_first_q();
-	} else if (str_cmp_cstr(&button->value, "good") == 0) {
+	} else if (str_cmp_cstr(&button.value, "good") == 0) {
 		// Put the card at the end of the deck if they
 		// chose "good". But only move it if there is more than one
 		// question in the quiz.
 		if (question_count > 1) {
 			move_front_q_to(question_count - 1);
 		}
-	} else if (str_cmp_cstr(&button->value, "poor") == 0) {
+	} else if (str_cmp_cstr(&button.value, "poor") == 0) {
 		handle_poor_value();
 	}
 
@@ -271,10 +294,19 @@ handle_in_quiz_post(struct request *r)
 		current_state = QUIZ_SELECTION;
 	} else {
 		// Update variables.
-		set_variable("questions_remaining", VT_LONG, question_count);
+		struct variable *questions_remaining = get_variable(
+			"questions_remaining");
+		questions_remaining->type = VT_LONG;
+		questions_remaining->data.as_long = question_count;
+
 		const struct question *current_q = questions;
-		set_variable("question", VT_STR, question.question);
-		set_variable("answer", VT_STR, question.answer);
+		struct variable *q = get_variable("question");
+		q->type = VT_STR;
+		q->data.as_str = current_q->question;
+
+		struct variable *answer = get_variable("answer");
+		answer->type = VT_STR;
+		answer->data.as_str = current_q->answer;
 	}
 
 	return 0;
@@ -310,10 +342,9 @@ handle_post(struct request *r, int client)
 }
 
 static void
-clear_question(question& q)
+clear_question(struct question *q)
 {
-	q.question.clear();
-	q.answer.clear();
+	q->question = q->answer = (struct str){0};
 }
 
 static int
@@ -338,82 +369,158 @@ create_default_config(void)
 }
 
 static bool
-has_indentation(const std::string& line)
+has_indentation(const struct str *line)
 {
-	if (line.empty()) return false;
-	// If the first char is whitespace, a asterisk, a hypen or a digit,
+	assert(line);
+
+	// An empty line has no indentation.
+	if (line->len == 0) return false;
+
+	// If the first char is whitespace, an asterisk, a hypen or a digit,
 	// its indented.
-	if (line.length() > 0) {
-		if (isspace(line.at(0)) || line.at(0) == '*' ||
-			line.at(0) == '-' || isdigit(line.at(0))) {
-			return true;
-		}
+	if (isspace(line->s[0]) || line->s[0] == '*' ||
+			line->s[0] == '-' || isdigit(line->s[0])) {
+		return true;
 	}
-	// Another empty line case I guess.
+
+	// The line is not indented.
 	return false;
 }
 
-static bool
-question_is_empty(const question& q)
+static int
+question_is_empty(const struct question *q)
 {
-	return q.question.empty() && q.answer.empty();
+	return q->question.len == 0 && q->answer.len == 0;
 }
 
 static int
-load_quiz(const std::string& quiz_name)
+load_quiz(const struct str *quiz_name)
 {
-	std::cout << "loading quiz " << quiz_name << '\n';
-	/*
-	 * Loop through every line of the file looking for things formatted
-	 * like this:
-	 *
-	 *    # A comment
-	 *    Question[:?]\n
-	 *    [ \t]*answer\n
-	 *
-	 * Questions end with either an optional colon (':'), an optional
-	 * question mark ('?') and a mandatory newline ('\n').
-	 *
-	 * Answers are indented after a question.
-         *
-	 * There can be multiple answer lines under a question and they should
-	 * all be included as part of the answer.
-	 */
-	std::fstream quiz{quiz_name, std::ios::in | std::ios::binary};
-	std::vector<std::string> lines;
-	for (std::string line; std::getline(quiz, line); ) {
-		std::cout << "Considering \"" << line << "\"...";
+	char file_name[MAX_FILE_NAME_LEN] = {0};
+
+	puts("loading quiz ");
+	str_print(stdout, quiz_name);
+	putchar('\n');
+	assert(quiz_name.len < MAX_FILE_NAME_LEN);
+	memcpy(file_name, quiz_name.s, quiz_name.len);
+
+	FILE *quiz = fopen(file_name, "rb");
+	if (quiz) {
+		read_in_quiz(quiz);
+		fclose(quiz);
+	} else {
+		fprintf("Failed to open %s: %i", file_name, errno);
+		return errno? errno : EEXIST;
+	}
+
+	return 0;
+}
+
+/*
+ * Loop through every line of the file looking for things formatted
+ * like this:
+ *
+ *    # A comment
+ *    Question[:?]\n
+ *    [ \t]*answer\n
+ *
+ * Questions are not indented and answers are indented after a question.
+ *
+ * There can be multiple answer lines under a question and they should
+ * all be included as part of the answer.
+ */
+static int
+read_in_quiz(FILE *f)
+{
+	if (fseek(f, 0, SEEK_END) != 0) {
+		fprintf(stderr, "Failed to seek for file length: %i\n", errno);
+		return errno? errno : EIO;
+	}
+	free_quiz();
+
+	quiz_file.len = ftell(f);
+	if (quiz_file.len == -1) {
+		fprintf(stderr, "Failed to get file length: %i\n", errno);
+		return errno? errno : EIO;
+	}
+	rewind(f);
+
+	quiz_file.data = malloc(quiz_file.len);
+	if (!quiz_file.data) {
+		fprintf(stderr, "Failed to alloc file buffer: %s\n",
+			strerror(errno));
+		return errno? errno : ENOMEM;
+	}
+
+	size_t bytes_read = fread(quiz_file.data, 1, quiz_file.len, f);
+	if (bytes_read != (size_t)quiz_file.len) {
+		fprintf(stderr, "Failed to read in quiz file: %s\n",
+			strerror(errno));
+		return errno? errno : EIO;
+	}
+
+	return parse_quiz(&quiz_file);
+}
+
+static int
+parse_quiz(struct file_data *quiz_data)
+{
+	long line_start;
+	long line_end;
+
+	free_lines();
+	for (line_start = 0; line_start < quiz_data->len; ++line_start) {
+		// Find the end of the line.
+		for (line_end = 0; line_end < quiz_data->len; ++line_end) {
+			if (quiz_data->data[line_end] == '\n') {
+				break;
+			}
+		}
+		struct str line = {quiz_data->s + line_start, line_end -
+			line_start};
+		printf("Considering \"");
+		str_print(stdout, &line);
+		printf("\"...");
+
 		// Skip empty lines.
-		if (line.empty()) {
-			std::cout << "empty line\n";
+		if (line.len == 0 || line.len == 1) {
+			line_start = line_end;
+			printf("empty line\n");
 			continue;
 		}
 		// Skip comment lines.
-		bool comment = false;
+		int comment = 0;
 		for (size_t i = 0; i < line.length(); ++i) {
 			// Loop through the line until we find the first non-
 			// space character. If that is a '#' its a comment.
-			if (isspace(line.at(i)))
+			if (isspace(line.s[i]))
 				continue;
-			if (line.at(i) == '#') {
-				comment = true;
+			if (line.s[i] == '#') {
+				comment = 1;
 				break;
 			}
 		}
 		if (comment) {
-			std::cout << "comment\n";
+			printf("comment\n");
+			line_end = line_start;
 			continue;
 		}
-		std::cout << "line\n";
-		lines.emplace_back(line);
+		
+		printf("line\n");
+		error = add_quiz_line(&line);
+		if (error) {
+			printf("Failed to add new line: %i\n", error);
+			return error;
+		}
 	}
 
 	// Now we have a list of all the lines from the file. Go through each
 	// line and create a question if the line starts without indentation.
 	// Every line after that has indentation is part of the answer.
-	question q;
-	quiz_questions.clear();
-	for (size_t i = 0; i < lines.size(); ++i) {
+	struct question q;
+	free_questions();
+
+	for (long i = 0; i < lines.size(); ++i) {
 		if (!has_indentation(lines.at(i))) {
 			if (!question_is_empty(q)) {
 				quiz_questions.emplace_back(q);
@@ -551,7 +658,7 @@ split_string(const std::string& str, char delimiter)
 /*
  * Replace the variables found in buf with their values.
  */
-static void replace_in_page(std::string& page)
+static void replace_in_page(struct dstr *page)
 {
 	for (std::string::size_type i = 0; i < page.length(); ++i) {
 		if (page.at(i) != '$')

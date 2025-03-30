@@ -29,9 +29,9 @@ struct str {
 };
 
 struct dstr {
-	char *buf;
-	long cap;
+	char *s;
 	long len;
+	long cap;
 };
 
 /* -1 for \0 */
@@ -155,6 +155,41 @@ int str_to_long(const struct str *s, long base, long *l);
  *         error code.
  */
 int str_copy_to_cstr(const struct str *s, char *dest, long dest_len);
+
+/**
+ * @brief Frees the memory used by the dstr.
+ *
+ * Note: This assumes the dstr was allocated using malloc.
+ *
+ * @param[in] ds - The dstr to free. If it is null, then nothing is done. If
+ *                 the dstr contains null pointers, then nothing is done.
+ */
+void dstr_free(struct dstr *ds);
+
+/**
+ * @brief Append the str data to the dstr, allocating memory in the dstr as
+ *        needed.
+ *
+ * @param[in,out] ds - The dstr to copy the data into.
+ * @param[in] s - The str to get data from.
+ *
+ * @return Returns zero if the dstr was successfully appended to. Otherwise
+ *         returns an error code.
+ */
+int dstr_append_str(struct dstr *ds, const struct str *s);
+
+/**
+ * @brief Append a C-string to the dstr, allocating memory in the dstr as
+ *        needed.
+ *
+ * @param[in,out] ds - The dstr to copy the data into.
+ * @param[in] cstr - The C-string to copy data from. Data will be copied up to
+ *                   the NULL terminator in the string.
+ *
+ * @return Returns 0 if the data was successfully copied into the dstr.
+ *         Otherwise, an error code is returned.
+ */
+int dstr_append_cstr(struct dstr *ds, const char *cstr);
 
 #ifdef DEFINE_STR
 
