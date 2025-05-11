@@ -20,8 +20,8 @@ OBJS=\
 	plugins.$(OBJ)
 
 PLUGINS:=\
-	quizzer.$(SO) \
-	quizzer-c.$(SO)
+	quizzer.$(SO) 
+	#quizzer-c.$(SO)
 
 CONVERTED_PAGES := \
 	plugins/quizzer/quiz_page.h \
