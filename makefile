@@ -20,7 +20,8 @@ OBJS=\
 	plugins.$(OBJ)
 
 PLUGINS:=\
-	quizzer.$(SO)
+	quizzer.$(SO) \
+	quizzer-c.$(SO)
 
 CONVERTED_PAGES := \
 	plugins/quizzer/quiz_page.h \
@@ -29,7 +30,7 @@ CONVERTED_PAGES := \
 
 TOOLS := \
 	tools/html2c \
-	#tools/html2cpp
+	tools/html2cpp
 
 CONV := tools/html2c
 
@@ -48,13 +49,16 @@ $(OUT): crvr.o $(LIBRARY)
 	$(CC) $(CFLAGS) crvr.o -o $@ $(LDFLAGS) $(LDLIBS)
 
 %.h: %.html
-	tools/html2c $^ > $@
+	$(CONV) $^ > $@
 
-%.$(SO): plugins/%.c
-	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
+%.$(SO): plugins/%.c plugins/%.cpp
+	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -fPIC -shared -o $@ $(LDFLAGS) $(LDLIBS)
 
-quizzer.$(SO): plugins/quizzer/quizzer.c $(CONVERTED_PAGES)
-	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -o $@ $(LDFLAGS) $(LDLIBS)
+quizzer.$(SO): plugins/quizzer/quizzer.cpp $(CONVERTED_PAGES)
+	$(CXX) $(CXXFLAGS) $(DYLIB_FLAGS) $< -fPIC -shared -o $@ $(LDFLAGS) $(LDLIBS)
+
+quizzer-c.$(SO): plugins/quizzer/quizzer.c $(CONVERTED_PAGES)
+	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -fPIC -shared -o $@ $(LDFLAGS) $(LDLIBS)
 
 analyze: crvr.c asl.c
 	clang-tidy crvr.c asl.c -checks=-*,cert-*,clang-analyzer-*,linuxkernel-*,performance-*,portability-*,readability-*

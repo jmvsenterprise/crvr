@@ -24,3 +24,4 @@ tools/html2cpp
 libcrvr.a
 # Ignore output from html2c test runs
 tools/tests/*.html.out
+*.so

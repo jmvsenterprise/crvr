@@ -18,6 +18,7 @@ extern "C" {
 #include <fstream>
 #include <map>
 #include <string>
+#include <variant>
 #include <vector>
 #include <iostream>
 #include <random>
@@ -133,13 +134,13 @@ handle_get(struct request *r, int client)
 	// Load the page text
 	switch (current_state) {
 	case state::startup:
-		page = startup_page;
+		page = startup_page_html;
 		break;
 	case state::quiz_selection:
-		page = select_quiz_page;
+		page = select_quiz_page_html;
 		break;
 	case state::in_quiz:
-		page = quiz_page;
+		page = quiz_page_html;
 		break;
 	}
 

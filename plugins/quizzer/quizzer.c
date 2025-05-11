@@ -368,23 +368,23 @@ create_default_config(void)
 	return 0;
 }
 
-static bool
+static int
 has_indentation(const struct str *line)
 {
 	assert(line);
 
 	// An empty line has no indentation.
-	if (line->len == 0) return false;
+	if (line->len == 0) return 0;
 
 	// If the first char is whitespace, an asterisk, a hypen or a digit,
 	// its indented.
 	if (isspace(line->s[0]) || line->s[0] == '*' ||
 			line->s[0] == '-' || isdigit(line->s[0])) {
-		return true;
+		return 1;
 	}
 
 	// The line is not indented.
-	return false;
+	return 0;
 }
 
 static int
@@ -520,55 +520,52 @@ parse_quiz(struct file_data *quiz_data)
 	struct question q;
 	free_questions();
 
-	for (long i = 0; i < lines.size(); ++i) {
-		if (!has_indentation(lines.at(i))) {
+	for (long i = 0; i < lines.count; ++i) {
+		if (!has_indentation(&lines.strs[i])) {
 			if (!question_is_empty(q)) {
-				quiz_questions.emplace_back(q);
+				add_question(questions, q);
 				clear_question(q);
 			}
-			q.question = lines.at(i);
+			q.question = lines.strs[i];
 		} else {
-			if (!q.answer.empty())
-				q.answer += '\n';
-			q.answer += lines.at(i);
+			if (!q.answer.s) {
+				q.answer.s = lines.strs[i];
+			}
+			q.answer.len += lines.strs[i].len;
 		}
 	}
 	// Save the last question being built.
 	if (!question_is_empty(q)) {
-		quiz_questions.emplace_back(q);
+		add_question(questions, q);
 	}
 
-	std::cout << "Loaded these questions:\n";
-	for (const auto& q : quiz_questions) {
-		std::cout << q << '\n';
+	printf("Loaded these questions:\n");
+	for (long i = 0; i < question_count; ++i) {
+		str_print(&questions[i].question);
 	}
-	std::cout << "Original question count: " << quiz_questions.size() <<
-		'\n';
+	printf("Original question count: %li\n", question_count);
 
 	// Duplicate and reverse every question.
-	const size_t original_end = quiz_questions.size();
+	const size_t original_end = question_count;
 	for (size_t i = 0; i < original_end; ++i) {
 		question flop;
-		flop.question = quiz_questions.at(i).answer;
-		flop.answer = quiz_questions.at(i).question;
-		quiz_questions.emplace_back(flop);
+		flop.question = questions[i].answer;
+		flop.answer = questions[i].question;
+		add_question(questions, flop);
 	}
-	std::cout << "Original + flopped question count: " <<
-		quiz_questions.size() << '\n';
+	printf("Original + flopped question count: %lu\n", question_count);
 
 	// Shuffle the questions
-	std::random_device device;
-	std::mt19937 randomizer(device());
-	std::shuffle(quiz_questions.begin(), quiz_questions.end(), randomizer);
+	shuffle_questions();
 
-	std::cout << "Questions shuffled.\n";
+	printf("Questions shuffled\n");
 
 	// Set up the variables needed for the quiz page
-	variables["quiz_title"] = quiz_name;
-	variables["questions_remaining"] = quiz_questions.size();
+	set_var_str("quiz_title", quiz_name);
+	set_var_ulong("questions_remaining", question_count);
 
-	variables["question"] = quiz_questions.at(0).question;
-	variables["answer"] = quiz_questions.at(0).answer;
+	set_var_str("question", &questions[0].question);
+	set_var_str("answer", &questions[0].answer);
 
 	current_state = state::in_quiz;
 
@@ -637,22 +634,32 @@ good_cleanup:
 	return error;
 }
 
-static std::vector<std::string>
-split_string(const std::string& str, char delimiter)
+int
+split_string(struct str *str, char delimiter, struct str_array *dst)
 {
-	std::vector<std::string> collection;
-	std::string::size_type prev = 0;
-	for (;;) {
-		auto position = str.find_first_of(delimiter, prev);
-		if (position == str.npos) {
-			collection.emplace_back(str.substr(prev));
-			return collection;
-		}
+	assert(str && dst);
 
-		collection.emplace_back(str.substr(prev, position - prev));
-		prev = position + 1;
+	dst->count = 0;
+	dst->cap = 0;
+	dst->strs = NULL;
+
+	long prev = 0;
+	long current = 0;
+	for (; current < str->len; ++current) {
+		// Skip until we get to a delimiter.
+		if (str->s[current] != delimiter) {
+			continue;
+		}
+		// Extract out the str.
+		struct str *s = str_array_get_new_str(dst);
+		str_get_substr(str, prev, current, s);
+		prev = current + 1;
 	}
-	return collection;
+	if (current > prev) {
+		struct str *s = str_array_get_new_str(dst);
+		str_get_substr(str, prev, current, s);
+	}
+	return 0;
 }
 
 /*
