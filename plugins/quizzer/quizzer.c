@@ -17,15 +17,12 @@
 #include "startup_page.h"
 
 #define CONFIG_FILE "quizzer.conf"
+#define MAX_FILE_NAME_LEN 512
 
 struct question {
 	struct str question;
 	struct str answer;
 };
-
-struct question *questions = NULL;
-long question_count = 0;
-long question_cap = 0;
 
 enum var_type {
 	VT_STR,
@@ -45,22 +42,28 @@ struct variable {
 	} data;
 };
 
-struct str *var_names = NULL;
-struct variable *var_values = NULL;
-
 struct file_data {
 	char *data;
 	long len;
 };
-
-struct file_data config_data = {0};
-struct file_data quiz_file = {0};
 
 struct str_array {
 	long count;
 	long cap;
 	struct str *strs;
 };
+
+struct question *questions = NULL;
+long question_count = 0;
+long question_cap = 0;
+
+struct str *var_names = NULL;
+struct variable *var_values = NULL;
+long var_count = 0;
+long var_cap = 0;
+
+struct file_data config_data = {0};
+struct file_data quiz_file = {0};
 
 struct str_array quiz_files = {0};
 struct str_array lines = {0};
@@ -76,14 +79,21 @@ enum state current_state = STARTUP;
 // Local functions.
 static void clear_question(struct question *q);
 static int create_default_config(void);
+static void free_lines(void);
+static void free_questions(void);
+static void free_quiz(void);
+static void free_variables(void);
 static int has_indentation(const struct str *line);
 static int load_quiz(const struct str *quiz_name);
 static int move_front_q_to(long offset);
+static int read_in_quiz(FILE *f);
+static void str_array_free(struct str_array *arr);
 /*
  * Lookup and return the variable with the specified name. If the variable
  * doesn't exist, create it and return it.
  */
-static struct variable *get_variable(const char *var_name);
+static struct variable *get_var(const struct str *name);
+static struct variable *get_var_cstr(const char *var_name);
 static int read_entire_file(const char *path, struct file_data *dest);
 /*
  * Remove the first q in the questions array, moving all the questions after
@@ -138,9 +148,7 @@ int load_plugin(void)
 	printf("Configuration found these quizzes:\n");
 	struct variable *quizzes = get_variable("quizzes");
 	quizzes->type = VT_DSTR;
-	struct dstr *quiz_list_html = &quizzes->data.as_dstr;
-	dstr_free(quiz_list_html);
-	*quiz_list_html = (struct dstr){0};
+	dstr_free(&quizzes->data.as_dstr);
 
 	for (long i = 0; i < quiz_files.count; i++) {
 		struct str *quiz_file = quiz_files.strs + i;
@@ -368,6 +376,37 @@ create_default_config(void)
 	return 0;
 }
 
+static void
+free_lines(void)
+{
+	str_array_free(lines);
+}
+
+static void
+free_quiz(void)
+{
+	free(quiz_file.data);
+	quiz_file.data = NULL;
+	quiz_file.len = 0;
+}
+
+static void
+free_questions(void)
+{
+	free(questions);
+	questions = NULL;
+	question_count = question_cap = 0;
+}
+
+static void
+free_variables(void)
+{
+	free(var_names);
+	free(var_values);
+	var_names = NULL;
+	var_values = NULL;
+}
+
 static int
 has_indentation(const struct str *line)
 {
@@ -388,6 +427,21 @@ has_indentation(const struct str *line)
 }
 
 static int
+remove_first_q(void)
+{
+	if (question_count <= 0) {
+		return 0;
+	}
+	if (question_count == 1) {
+		question_count = 0;
+		return 0;
+	}
+	question_count--;
+	memmove(&question[0], &question[1], sizeof(*questions) * question_count);
+	return 0;
+}
+
+static int
 question_is_empty(const struct question *q)
 {
 	return q->question.len == 0 && q->answer.len == 0;
@@ -401,8 +455,8 @@ load_quiz(const struct str *quiz_name)
 	puts("loading quiz ");
 	str_print(stdout, quiz_name);
 	putchar('\n');
-	assert(quiz_name.len < MAX_FILE_NAME_LEN);
-	memcpy(file_name, quiz_name.s, quiz_name.len);
+	assert(quiz_name->len < MAX_FILE_NAME_LEN);
+	memcpy(file_name, quiz_name->s, quiz_name->len);
 
 	FILE *quiz = fopen(file_name, "rb");
 	if (quiz) {
@@ -414,6 +468,52 @@ load_quiz(const struct str *quiz_name)
 	}
 
 	return 0;
+}
+
+static int
+move_front_q_to(long offset)
+{
+	struct question tmp;
+	if (offset < 0 || offset >= question_count) {
+		return EINVAL;
+	}
+	// 0 is the offset of the front question, so skip moving in that case.
+	if (offset == 0) return 0;
+	tmp = questions[0];
+	// Shift all questions forward one position up to the offset we want
+	// to fill in. Questions following offset don't need to move.
+	memmove(&questions[0], &questions[1], sizeof(*questions) * offset);
+	questions[offset] = tmp;
+	return 0;
+}
+
+static void
+str_array_free(struct str_array *arr)
+{
+	if (arr && arr->strs) {
+		free(arr->strs);
+	}
+	arr->strs = NULL;
+	arr->count = arr->cap = 0;
+}
+
+static struct variable *
+get_var(const struct str *name)
+{
+	long i;
+	for (i = 0; i < var_count; ++i) {
+		if (0 == str_cmp(&var_names[i], name)) {
+			return &var_values[i];
+		}
+	}
+	return NULL;
+}
+
+static struct variable *
+get_var_cstr(const char *var_name)
+{
+	const struct str s = {.s = var_name, .len = strlen(var_name)};
+	return get_var(&s);
 }
 
 /*
@@ -541,7 +641,7 @@ parse_quiz(struct file_data *quiz_data)
 
 	printf("Loaded these questions:\n");
 	for (long i = 0; i < question_count; ++i) {
-		str_print(&questions[i].question);
+		str_print(stdout, &questions[i].question);
 	}
 	printf("Original question count: %li\n", question_count);
 
@@ -634,8 +734,8 @@ good_cleanup:
 	return error;
 }
 
-int
-split_string(struct str *str, char delimiter, struct str_array *dst)
+static int
+split_string(const struct str *str, struct str_array *dst, char delimiter)
 {
 	assert(str && dst);
 
@@ -667,67 +767,100 @@ split_string(struct str *str, char delimiter, struct str_array *dst)
  */
 static void replace_in_page(struct dstr *page)
 {
-	for (std::string::size_type i = 0; i < page.length(); ++i) {
-		if (page.at(i) != '$')
+	long i;
+	for (i = 0; i < page->len; ++i) {
+		// Find a variable.
+		if (page->s[i] != '$')
 			continue;
-
 		// Found a potential variable, check if it is escaped.
-		if (i + 1 >= page.length()) {
-			// No more chars, but also no more text so we can't ID
-			// the variable anyway. Escape it and return.
-			page.insert(i, "$");
+		if (i + 1 >= page->len) {
+			// No more chars & no more text. Can't ID the variable
+			// anyway. Escape it & return.
+			dstr_insert_cstr(page, i, "$");
 			return;
 		}
 		// Can check if the var is escaped.
-		if (page.at(i + 1) == '$') {
-			// Its escaped, so continue, but jump past the escaped
-			// $, otherwise it'll look like its not escaped. +1
-			// should do. The loop will move us +2 total.
+		if (page->s[i + 1] == '$') {
+			// It's escaped, continue. Jump past escaped $. The
+			// loop will move us +2 total.
 			i++;
 			continue;
 		}
-
-		// Not escaped, so its a variable. Get its name. Move past the
-		// $ first though so +1.
-		std::string::size_type start = i + 1;
-
-		// Variable ends at the next whitespace or symbol. But check for
-		// an underscore too, which continues the name.
-		std::string::size_type end;
-		for (end = start; end < page.length(); ++end) {
-			if (!isalnum(page[end]) && (page[end] != '_'))
+		// Its a variable. Get name. Move past the $ first.
+		long start = i + 1;
+		// Variable ends at next whitespace or symbol. Check for
+		// underscore, which continues name.
+		long end;
+		for (end = start; end < page->len; ++end) {
+			if (!isalnum(page->s[end]) && (page->s[end] != '_'))
 				break;
 		}
 
 		// Lookup variable
-		auto var_name = page.substr(start, end - start);
-		std::cout << "Looking for variable \"" << var_name << "\"...";
-		auto entry = variables.find(var_name);
-		if (entry == variables.end()) {
-			std::cout << "not found\n";
+		struct str tmp = {page->s, page->len};
+		struct str var_name;
+		int error = str_get_substr(&tmp, start, end, &var_name);
+		struct variable *entry = NULL;
+		if (error) {
+			printf("Failed to get var name %i", error);
+		} else {
+			printf("Looking for variable \"");
+			str_print(stdout, &var_name);
+			printf("\"...");
+			entry = get_var(&var_name);
+		}
+		if (entry == NULL) {
+			printf("not found\n");
 			// Just escape the $
-			page.insert(start, "$");
-			// Jump past the escaped $. Like above, +1 should do.
-			// The loop ++ will make it +2.
+			dstr_insert_cstr(page, start, "$");
+			// Jump past the escaped $. Loop also ++s
 			i++;
 			continue;
 		}
-		std::cout << "found!\n";
+		printf("found!\n");
 		// Otherwise we have the variable so replace the name with its
 		// value.
-		auto& values = entry->second;
-		std::string value{"unrecognized value"};
-		if (std::holds_alternative<int>(values)) {
-			value = std::to_string(std::get<int>(values));
-		} else if (std::holds_alternative<float>(values)) {
-			value = std::to_string(std::get<float>(values));
-		} else if (std::holds_alternative<std::string>(values)) {
-			value = std::get<std::string>(values);
-		} else if (std::holds_alternative<size_t>(values)) {
-			value = std::to_string(std::get<size_t>(values));
-		}
-
+		char var_as_str[512] = {0};
 		// +1 because we are starting at the '$' which is at i.
-		page.replace(i, end - start + 1, value);
+		long var_len = end - start + 1;
+		switch (entry->type) {
+		case VT_LONG:
+			snprintf(var_as_str, sizeof(var_as_str) - 1, "%li",
+				entry->data.as_long);
+			error = dstr_replace_with_cstr(page, i, var_len,
+				var_as_str);
+			assert(error == 0); // TODO: handle
+			break;
+		case VT_ULONG:
+			snprintf(var_as_str, sizeof(var_as_str) - 1, "%lu",
+				entry->data.as_ulong);
+			error = dstr_replace_with_cstr(page, i, var_len,
+				var_as_str);
+			assert(error == 0); // TODO: handle
+			break;
+		case VT_FLOAT:
+			snprintf(var_as_str, sizeof(var_as_str) - 1, "%f",
+				entry->data.as_float);
+			error = dstr_replace_with_cstr(page, i, var_len,
+				var_as_str);
+			assert(error == 0); // TODO: handle
+			break;
+		case VT_STR:
+			error = dstr_replace_with(page, i, var_len,
+				entry->data.as_str);
+			assert(error == 0); // TODO: handle
+			break;
+		case VT_DSTR:
+			struct str tmp = {.s = entry->data.as_dstr.s,
+				.len = entry->data.as_dstr.len};
+			error = dstr_replace_with(page, i, var_len,
+				&tmp);
+			assert(error == 0); // TODO: Handle
+			break;
+		default:
+			fprintf(stderr, "Unrecognized var type: %lu",
+				(unsigned long)entry->type);
+			break;
+		}
 	}
 };
