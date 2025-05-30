@@ -77,6 +77,7 @@ enum state {
 enum state current_state = STARTUP;
 
 // Local functions.
+static int add_question(struct question *questions, struct question *new_q);
 static void clear_question(struct question *q);
 static int create_default_config(void);
 static void free_lines(void);
@@ -86,14 +87,16 @@ static void free_variables(void);
 static int has_indentation(const struct str *line);
 static int load_quiz(const struct str *quiz_name);
 static int move_front_q_to(long offset);
+static int parse_quiz(struct file_data *quiz_data);
 static int read_in_quiz(FILE *f);
+static int str_array_add(struct str_array *arr, const struct str *str);
 static void str_array_free(struct str_array *arr);
 /*
  * Lookup and return the variable with the specified name. If the variable
  * doesn't exist, create it and return it.
  */
 static struct variable *get_var(const struct str *name);
-static struct variable *get_var_cstr(const char *var_name);
+static struct variable *get_var_cstr(char *var_name);
 static int read_entire_file(const char *path, struct file_data *dest);
 /*
  * Remove the first q in the questions array, moving all the questions after
@@ -349,6 +352,11 @@ handle_post(struct request *r, int client)
 	return handle_get(r, client);
 }
 
+static int
+add_question(struct question *questions, struct question *new_q)
+{
+}
+
 static void
 clear_question(struct question *q)
 {
@@ -437,7 +445,8 @@ remove_first_q(void)
 		return 0;
 	}
 	question_count--;
-	memmove(&question[0], &question[1], sizeof(*questions) * question_count);
+	memmove(&question[0], &question[1],
+		sizeof(*questions) * (unsigned long)question_count);
 	return 0;
 }
 
@@ -463,7 +472,7 @@ load_quiz(const struct str *quiz_name)
 		read_in_quiz(quiz);
 		fclose(quiz);
 	} else {
-		fprintf("Failed to open %s: %i", file_name, errno);
+		fprintf(stderr, "Failed to open %s: %i", file_name, errno);
 		return errno? errno : EEXIST;
 	}
 
@@ -484,6 +493,50 @@ move_front_q_to(long offset)
 	// to fill in. Questions following offset don't need to move.
 	memmove(&questions[0], &questions[1], sizeof(*questions) * offset);
 	questions[offset] = tmp;
+	return 0;
+}
+
+static int
+str_array_add(struct str_array *arr, const struct str *str)
+{
+	struct str *new_arr;
+	long new_cap;
+	if (!arr || !str) return EINVAL;
+	/* If the array hasn't been initialized, set it up so it goes into the
+	 * code below that allocates an array.*/
+	if (!arr->strs) {
+		arr->count = 0;
+		arr->cap = 0;
+	}
+	if (arr->count >= arr->cap) {
+		/* Can't expand any further than this. */
+		if (arr->cap == LONG_MAX) {
+			return ENOBUFS;
+		}
+		if (arr->count != 0) {
+			/* Double the current count. */
+			new_cap = arr->count * 2;
+		} else {
+			/* New array, start with a default amount */
+			new_cap = 10;
+		}
+		/* Clamp if capacity overflowed. */
+		if (new_cap < 0) {
+			new_cap = LONG_MAX;
+		}
+		struct str *new_arr = calloc(new_cap, sizeof(*new_arr));
+		if (!new_arr) {
+			return errno? errno : ENOMEM;
+		}
+		memcpy(new_arr, arr->strs, arr->count);
+		if (arr->strs)
+			free(arr->strs);
+		arr->strs = new_arr;
+		arr->cap = new_cap;
+	}
+	// Can add the item at count.
+	arr->strs[arr->count] = *line;
+	arr->count++;
 	return 0;
 }
 
@@ -510,9 +563,17 @@ get_var(const struct str *name)
 }
 
 static struct variable *
-get_var_cstr(const char *var_name)
+get_var_cstr(char *var_name)
 {
-	const struct str s = {.s = var_name, .len = strlen(var_name)};
+	struct str s;
+	s.s = var_name;
+	unsigned long len = strlen(var_name);
+	if (len > (unsigned long)LONG_MAX) {
+		fprintf(stderr, "var name: %s is too long. Trimming.\n",
+			var_name);
+		len = LONG_MAX;
+	}
+	s.len = (long)len;
 	return get_var(&s);
 }
 
@@ -545,15 +606,16 @@ read_in_quiz(FILE *f)
 	}
 	rewind(f);
 
-	quiz_file.data = malloc(quiz_file.len);
+	unsigned long quiz_len = (unsigned long)quiz_file.len;
+	quiz_file.data = malloc(quiz_len);
 	if (!quiz_file.data) {
 		fprintf(stderr, "Failed to alloc file buffer: %s\n",
 			strerror(errno));
 		return errno? errno : ENOMEM;
 	}
 
-	size_t bytes_read = fread(quiz_file.data, 1, quiz_file.len, f);
-	if (bytes_read != (size_t)quiz_file.len) {
+	size_t bytes_read = fread(quiz_file.data, 1, quiz_len, f);
+	if (bytes_read != (size_t)quiz_len) {
 		fprintf(stderr, "Failed to read in quiz file: %s\n",
 			strerror(errno));
 		return errno? errno : EIO;
@@ -567,6 +629,7 @@ parse_quiz(struct file_data *quiz_data)
 {
 	long line_start;
 	long line_end;
+	int error = 0;
 
 	free_lines();
 	for (line_start = 0; line_start < quiz_data->len; ++line_start) {
@@ -576,8 +639,9 @@ parse_quiz(struct file_data *quiz_data)
 				break;
 			}
 		}
-		struct str line = {quiz_data->s + line_start, line_end -
-			line_start};
+		struct str line;
+		line.s = quiz_data->data + line_start;
+		line.len = line_end - line_start;
 		printf("Considering \"");
 		str_print(stdout, &line);
 		printf("\"...");
@@ -590,7 +654,7 @@ parse_quiz(struct file_data *quiz_data)
 		}
 		// Skip comment lines.
 		int comment = 0;
-		for (size_t i = 0; i < line.length(); ++i) {
+		for (size_t i = 0; i < line.len; ++i) {
 			// Loop through the line until we find the first non-
 			// space character. If that is a '#' its a comment.
 			if (isspace(line.s[i]))
@@ -607,7 +671,7 @@ parse_quiz(struct file_data *quiz_data)
 		}
 		
 		printf("line\n");
-		error = add_quiz_line(&line);
+		error = str_array_add(&lines, &line);
 		if (error) {
 			printf("Failed to add new line: %i\n", error);
 			return error;
@@ -622,7 +686,7 @@ parse_quiz(struct file_data *quiz_data)
 
 	for (long i = 0; i < lines.count; ++i) {
 		if (!has_indentation(&lines.strs[i])) {
-			if (!question_is_empty(q)) {
+			if (!question_is_empty(&q)) {
 				add_question(questions, q);
 				clear_question(q);
 			}

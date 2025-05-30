@@ -79,6 +79,7 @@ int parse_file(FILE *f, const char *file_name)
 {
 	char *buf = NULL;
 	long buf_len = 0;
+	char c;
 
 	if (fseek(f, 0, SEEK_END) < 0) {
 		perror("Failed to seek in file");
@@ -129,7 +130,7 @@ int parse_file(FILE *f, const char *file_name)
 			case '"': // fallthrough
 			case '\'':
 				// Print the string to this point.
-				char c = buf[i];
+				c = buf[i];
 				buf[i] = 0;
 				printf("%s", line_start);
 				// print an escape.
