@@ -107,6 +107,9 @@ static int question_is_empty(const struct question *q);
 static void replace_in_page(struct dstr *page);
 static int split_string(const struct str *str, struct str_array *strs,
 	char delimiter);
+/* Set variable values */
+static int set_var_str(const char* name, const char* value);
+static int set_var_ulong(const char* name, unsigned long value);
 
 static void print_question(FILE *f, struct question *q)
 {
@@ -355,6 +358,37 @@ handle_post(struct request *r, int client)
 static int
 add_question(struct question *questions, struct question *new_q)
 {
+	struct question *new_array;
+	long new_cap;
+
+	if (!questions || !new_q) return EINVAL;
+	if (question_count >= question_cap) {
+		if (question_cap > 0) {
+			if (question_cap == LONG_MAX) {
+				return ENOMEM;
+			}
+			new_cap = question_cap * 2;
+			// Overflow check
+			if (new_cap < question_cap) {
+				new_cap = LONG_MAX;
+			}
+		} else {
+			question_cap = 10;
+		}
+		new_array = calloc(new_cap, sizeof(*new_array));
+		if (!new_array) {
+			return ENOMEM;
+		}
+		for (long i = 0; i < question_count; ++i) {
+			new_array[i] = questions[i];
+		}
+		if (questions)
+			free(questions);
+		questions = new_array;
+		question_cap = new_cap;
+	}
+	questions[question_count] = *new_q;
+	question_count++;
 }
 
 static void
@@ -491,7 +525,8 @@ move_front_q_to(long offset)
 	tmp = questions[0];
 	// Shift all questions forward one position up to the offset we want
 	// to fill in. Questions following offset don't need to move.
-	memmove(&questions[0], &questions[1], sizeof(*questions) * offset);
+	memmove(&questions[0], &questions[1], sizeof(*questions) *
+		(unsigned long)offset);
 	questions[offset] = tmp;
 	return 0;
 }
@@ -524,7 +559,8 @@ str_array_add(struct str_array *arr, const struct str *str)
 		if (new_cap < 0) {
 			new_cap = LONG_MAX;
 		}
-		struct str *new_arr = calloc(new_cap, sizeof(*new_arr));
+		struct str *new_arr = calloc((unsigned long)new_cap,
+			sizeof(*new_arr));
 		if (!new_arr) {
 			return errno? errno : ENOMEM;
 		}
@@ -535,7 +571,7 @@ str_array_add(struct str_array *arr, const struct str *str)
 		arr->cap = new_cap;
 	}
 	// Can add the item at count.
-	arr->strs[arr->count] = *line;
+	arr->strs[arr->count] = *str;
 	arr->count++;
 	return 0;
 }
@@ -559,7 +595,7 @@ get_var(const struct str *name)
 			return &var_values[i];
 		}
 	}
-	return NULL;
+	return create_var(name);
 }
 
 static struct variable *
@@ -687,20 +723,20 @@ parse_quiz(struct file_data *quiz_data)
 	for (long i = 0; i < lines.count; ++i) {
 		if (!has_indentation(&lines.strs[i])) {
 			if (!question_is_empty(&q)) {
-				add_question(questions, q);
-				clear_question(q);
+				add_question(questions, &q);
+				clear_question(&q);
 			}
 			q.question = lines.strs[i];
 		} else {
 			if (!q.answer.s) {
-				q.answer.s = lines.strs[i];
+				q.answer.s = lines.strs[i].s;
 			}
 			q.answer.len += lines.strs[i].len;
 		}
 	}
 	// Save the last question being built.
-	if (!question_is_empty(q)) {
-		add_question(questions, q);
+	if (!question_is_empty(&q)) {
+		add_question(questions, &q);
 	}
 
 	printf("Loaded these questions:\n");
@@ -710,12 +746,12 @@ parse_quiz(struct file_data *quiz_data)
 	printf("Original question count: %li\n", question_count);
 
 	// Duplicate and reverse every question.
-	const size_t original_end = question_count;
+	const size_t original_end = (size_t)question_count;
 	for (size_t i = 0; i < original_end; ++i) {
-		question flop;
+		struct question flop;
 		flop.question = questions[i].answer;
 		flop.answer = questions[i].question;
-		add_question(questions, flop);
+		add_question(questions, &flop);
 	}
 	printf("Original + flopped question count: %lu\n", question_count);
 
@@ -928,3 +964,29 @@ static void replace_in_page(struct dstr *page)
 		}
 	}
 };
+
+static struct variable*
+create_var(struct str *name)
+{
+#error todo
+}
+
+static int
+set_var_str(const struct str* name, const struct str* value)
+{
+	struct variable *var = get_var(name);
+	if (!var) return ENOBUFS;
+	var->type = VT_STR;
+	var->data.str = str;
+	return 0;
+}
+
+static int
+set_var_ulong(const struct str* name, unsigned long value)
+{
+	struct variable *var = get_var(name);
+	if (!var) return ENOBUFS;
+	var->type = VT_ULONG;
+	var->data.ulong = value;
+	return 0;
+}
