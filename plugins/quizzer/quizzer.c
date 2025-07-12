@@ -64,6 +64,7 @@ long var_cap = 0;
 
 struct file_data config_data = {0};
 struct file_data quiz_file = {0};
+struct str quiz_name = {0};
 
 struct str_array quiz_files = {0};
 struct str_array lines = {0};
@@ -82,6 +83,7 @@ static void clear_question(struct question *q);
 static int create_default_config(void);
 static void free_lines(void);
 static void free_questions(void);
+static void shuffle_questions(void);
 static void free_quiz(void);
 static void free_variables(void);
 static int has_indentation(const struct str *line);
@@ -91,6 +93,7 @@ static int parse_quiz(struct file_data *quiz_data);
 static int read_in_quiz(FILE *f);
 static int str_array_add(struct str_array *arr, const struct str *str);
 static void str_array_free(struct str_array *arr);
+static int create_var(const struct str *name);
 /*
  * Lookup and return the variable with the specified name. If the variable
  * doesn't exist, create it and return it.
@@ -109,6 +112,8 @@ static int split_string(const struct str *str, struct str_array *strs,
 	char delimiter);
 /* Set variable values */
 static int set_var_str(const char* name, const char* value);
+static int set_var_cstr(const char* name, const char* value);
+static int set_var_dstr(const char* name, const char* value);
 static int set_var_ulong(const char* name, unsigned long value);
 
 static void print_question(FILE *f, struct question *q)
@@ -440,6 +445,36 @@ free_questions(void)
 	question_count = question_cap = 0;
 }
 
+/*
+ * Move questions around randomly as a shuffle. Might not be a good algorithm
+ * but maybe it will be good enough.
+ */
+static void
+shuffle_questions(void)
+{
+	struct question tmp;
+	long randomizations = question_count;
+	long index1;
+	long index2;
+
+	// If we only have zero or one question, just return.
+	if (question_count <= 1) return;
+
+	srand(time(NULL));
+	
+	for (; randomizations; --randomizations) {
+		// Get to random non-equal indexes.
+		do {
+			index1 = rand() % question_count;
+			index2 = rand() % question_count;
+		} while (index1 == index2)
+		// Swap them.
+		tmp = questions[index1];
+		questions[index1] = questions[index2];
+		questions[index2] = tmp;
+	}
+}
+
 static void
 free_variables(void)
 {
@@ -479,7 +514,7 @@ remove_first_q(void)
 		return 0;
 	}
 	question_count--;
-	memmove(&question[0], &question[1],
+	memmove(&questions[0], &questions[1],
 		sizeof(*questions) * (unsigned long)question_count);
 	return 0;
 }
@@ -586,16 +621,82 @@ str_array_free(struct str_array *arr)
 	arr->count = arr->cap = 0;
 }
 
+static int
+create_var(const struct str *name)
+{
+	long i;
+	long new_cap;
+	struct str *new_names;
+	struct variable *new_values;
+
+	// Check that the variable doesn't exist
+	for (i = 0; i < var_count; ++i) {
+		if (str_cmp(name, var_names + i) == 0) {
+			return EEXIST;
+		}
+	}
+	// Check if we need to make room.
+	if (var_count >= var_cap) {
+		errno = 0;
+		// Startup case, nothing is allocated.
+		if (var_cap == 0) {
+			new_cap = 10;
+		} else if (var_cap == LONG_MAX) {
+			// No more space.
+			return ENOBUFS;
+		} else {
+			// Normal case, double our capacity. Check for overflow.
+			new_cap = var_cap * 2;
+			if (new_cap < 0) {
+				new_cap = LONG_MAX;
+			}
+		}
+		new_names = calloc((unsigned long)new_cap, sizeof(*new_names));
+		if (!new_names) {
+			perror("Could not create new names array");
+			return errno? errno: ENOMEM;
+		}
+		new_values = calloc((unsigned long)new_cap,
+			sizeof(*new_values));
+		if (!new_values) {
+			perror("Could not create new values array");
+			free(new_names);
+			return errno? errno: ENOMEM;
+		}
+		memcpy(new_names, var_names, (unsigned long)var_count *
+			sizeof(*var_names));
+		memcpy(new_values, var_values, (unsigned long)var_count *
+			sizeof(*var_values));
+		free(var_names);
+		free(var_values);
+		var_names = new_names;
+		var_values = new_values;
+		var_cap = new_cap;
+	}
+	var_names[var_count] = name;
+	var_values[var_count].type = VT_LONG;
+	var_values[var_count].data.as_long = 0;
+	var_count++;
+	return 0;
+}
+
 static struct variable *
 get_var(const struct str *name)
 {
 	long i;
+	// Try to create it. If we get EEXIST or 0 we can go get it.
+	int error = create_var(name);
+	if (error != EEXIST && error != 0) {
+		perror("Cannot get variable");
+		return NULL;
+	}
 	for (i = 0; i < var_count; ++i) {
 		if (0 == str_cmp(&var_names[i], name)) {
 			return &var_values[i];
 		}
 	}
-	return create_var(name);
+	perror("Failed to find variable???");
+	return NULL;
 }
 
 static struct variable *
@@ -971,13 +1072,32 @@ create_var(struct str *name)
 #error todo
 }
 
-static int
-set_var_str(const struct str* name, const struct str* value)
+static int set_var_str(const char* name, const char* value)
 {
 	struct variable *var = get_var(name);
 	if (!var) return ENOBUFS;
 	var->type = VT_STR;
 	var->data.str = str;
+	return 0;
+}
+
+static int
+set_var_cstr(const struct str *name, const char *value)
+{
+	set_var_dstr(name, value);
+}
+
+static int set_var_dstr(const char* name, const char* value)
+{
+	struct variable *var = get_var(name);
+	if (!var) return ENOBUFS;
+	if (var->type != VT_DSTR) {
+		var->type = VT_DSTR;
+		var->data.dstr = {.s = NULL, .len = 0, .cap = 0};
+	}
+	// Reset to 0 as we are setting the dstr, then append new value.
+	var->data.dstr.len = 0;
+	dstr_append_cstr(&var->data.dstr, value);
 	return 0;
 }
 
