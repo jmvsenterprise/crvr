@@ -91,6 +91,7 @@ static int load_quiz(const struct str *quiz_name);
 static int move_front_q_to(long offset);
 static int parse_quiz(struct file_data *quiz_data);
 static int read_in_quiz(FILE *f);
+static int str_array_get_new(struct str_array *arr, struct str **dst);
 static int str_array_add(struct str_array *arr, const struct str *str);
 static void str_array_free(struct str_array *arr);
 static int create_var(const struct str *name);
@@ -111,9 +112,10 @@ static void replace_in_page(struct dstr *page);
 static int split_string(const struct str *str, struct str_array *strs,
 	char delimiter);
 /* Set variable values */
-static int set_var_str(const char* name, const char* value);
+static int set_var_str(const char* name, const struct str *value);
 static int set_var_cstr(const char* name, const char* value);
 static int set_var_dstr(const char* name, const char* value);
+static int set_var_long(const char* name, long value);
 static int set_var_ulong(const char* name, unsigned long value);
 
 static void print_question(FILE *f, struct question *q)
@@ -567,6 +569,20 @@ move_front_q_to(long offset)
 }
 
 static int
+str_array_get_new(struct str_array *arr, struct str **dst)
+{
+	struct str tmp = {0};
+	int error;
+
+	assert(arr && dst);
+	error = str_array_add(arr, &tmp);
+	if (error)
+		return error;
+	*dst = arr->strs[arr->count - 1];
+	return 0;
+}
+
+static int
 str_array_add(struct str_array *arr, const struct str *str)
 {
 	struct str *new_arr;
@@ -673,7 +689,7 @@ create_var(const struct str *name)
 		var_values = new_values;
 		var_cap = new_cap;
 	}
-	var_names[var_count] = name;
+	var_names[var_count] = *name;
 	var_values[var_count].type = VT_LONG;
 	var_values[var_count].data.as_long = 0;
 	var_count++;
@@ -791,7 +807,7 @@ parse_quiz(struct file_data *quiz_data)
 		}
 		// Skip comment lines.
 		int comment = 0;
-		for (size_t i = 0; i < line.len; ++i) {
+		for (long i = 0; i < line.len; ++i) {
 			// Loop through the line until we find the first non-
 			// space character. If that is a '#' its a comment.
 			if (isspace(line.s[i]))
@@ -862,13 +878,13 @@ parse_quiz(struct file_data *quiz_data)
 	printf("Questions shuffled\n");
 
 	// Set up the variables needed for the quiz page
-	set_var_str("quiz_title", quiz_name);
-	set_var_ulong("questions_remaining", question_count);
+	set_var_str("quiz_title", &quiz_name);
+	set_var_long("questions_remaining", question_count);
 
 	set_var_str("question", &questions[0].question);
 	set_var_str("answer", &questions[0].answer);
 
-	current_state = state::in_quiz;
+	current_state = IN_QUIZ;
 
 	return 0;
 }
@@ -938,6 +954,9 @@ good_cleanup:
 static int
 split_string(const struct str *str, struct str_array *dst, char delimiter)
 {
+	int error;
+	struct str *s;
+
 	assert(str && dst);
 
 	dst->count = 0;
@@ -952,12 +971,14 @@ split_string(const struct str *str, struct str_array *dst, char delimiter)
 			continue;
 		}
 		// Extract out the str.
-		struct str *s = str_array_get_new_str(dst);
+		error = str_array_get_new(dst, &s);
+		if (error) return error;
 		str_get_substr(str, prev, current, s);
 		prev = current + 1;
 	}
 	if (current > prev) {
-		struct str *s = str_array_get_new_str(dst);
+		error = str_array_get_new(dst, &s);
+		if (error) return error;
 		str_get_substr(str, prev, current, s);
 	}
 	return 0;
@@ -1072,7 +1093,7 @@ create_var(struct str *name)
 #error todo
 }
 
-static int set_var_str(const char* name, const char* value)
+static int set_var_str(const char* name, const struct str *value)
 {
 	struct variable *var = get_var(name);
 	if (!var) return ENOBUFS;
@@ -1102,11 +1123,21 @@ static int set_var_dstr(const char* name, const char* value)
 }
 
 static int
+set_var_long(const char* name, long value)
+{
+	struct variable *var = get_var(name);
+	if (!var) return ENOBUFS;
+	var->type = VT_LONG;
+	var->data.as_long = value;
+	return 0;
+}
+
+static int
 set_var_ulong(const struct str* name, unsigned long value)
 {
 	struct variable *var = get_var(name);
 	if (!var) return ENOBUFS;
 	var->type = VT_ULONG;
-	var->data.ulong = value;
+	var->data.as_ulong = value;
 	return 0;
 }

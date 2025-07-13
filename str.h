@@ -190,6 +190,32 @@ int dstr_append_str(struct dstr *ds, const struct str *s);
  *         Otherwise, an error code is returned.
  */
 int dstr_append_cstr(struct dstr *ds, const char *cstr);
+ 
+/**
+ * @brief Insert a str into the dstr at the index.
+ *
+ * @param[in,out] ds - The dstr to insert the string into.
+ * @param[in] index - The location in the dstr to insert the cstr. All data in
+ *   the dstr after this location will be pushed out to make room for the cstr.
+ * @param[in] str - The str to insert into the dstr.
+ *
+ * @return Returns 0 if the cstr was inserted successfully. Otherwise an error
+ *         code is returned.
+ */
+int dstr_insert_str(struct dstr *ds, long index, const struct str *str);
+
+/**
+ * @brief Insert a C-string into the dstr at the index.
+ *
+ * @param[in,out] ds - The dstr to insert the string into.
+ * @param[in] index - The location in the dstr to insert the cstr. All data in
+ *   the dstr after this location will be pushed out to make room for the cstr.
+ * @param[in] cstr - The cstr to insert into the dstr.
+ *
+ * @return Returns 0 if the cstr was inserted successfully. Otherwise an error
+ *         code is returned.
+ */
+int dstr_insert_cstr(struct dstr *ds, long index, const char *cstr);
 
 #ifdef DEFINE_STR
 
@@ -336,6 +362,90 @@ int str_copy_to_cstr(const struct str *s, char *dest, long dest_len)
 	memcpy(dest, s->s, (size_t)s->len);
 	dest[s->len + 1] = 0;
 	return 0;
+}
+
+void
+dstr_free(struct dstr *ds)
+{
+	if (!ds) return;
+	if (ds->s) free(ds->s);
+	ds->len = ds->cap = 0;
+}
+
+static int
+dstr_grow_by(struct str *ds, long bytes)
+{
+	long new_cap;
+	char *new_s;
+
+	errno = 0;
+	if (ds->cap == LONG_MAX) {
+		return ENOMEM;
+	}
+	new_cap = ds->cap + bytes;
+	if (new_cap < 0) {
+		// Can't fit the string in.
+		return ENOBUFS;
+	}
+	new_s = calloc(new_cap, sizeof(*new_s));
+	if (!new_s) {
+		return errno? errno: ENOMEM;
+	}
+	memcpy(new_s, ds->s, ds->len);
+	free(ds->s);
+	ds->cap = new_cap;
+}
+
+int
+dstr_append_str(struct dstr *ds, const struct str *s)
+{
+	long space;
+	int error;
+	int i;
+
+	if (!ds || !s) return EINVAL;
+	space = ds->cap - ds->len;
+	if (space < s->len) {
+		error = dstr_grow_by(ds, s->len);
+		if (error) return error;
+	}
+	for (i = ds->len; (i < s->len) && (i < ds->cap); ++i) {
+		ds->s[i] = s->s[i];
+	}
+	ds->len = i;
+	return 0;
+}
+
+int
+dstr_append_cstr(struct dstr *ds, const char *cstr)
+{
+	if (!ds || !cstr) return EINVAL;
+	struct str s = {.s = cstr, .len = strlen(cstr)};
+	return dstr_append_str(ds, &s);
+}
+
+int
+dstr_insert_str(struct dstr *ds, long index, const struct str *str)
+{
+	long space;
+
+	if (!ds || !s || (index >= ds->cap) return EINVAL;
+	space = ds->cap - ds->len;
+	if (space < str->len) {
+		error = dstr_grow_by(ds, str->len);
+		if (error) return error;
+	}
+	memmove(ds->s + index + str->len, ds->s + index, str->len);
+	memcpy(ds->s + index, str->s, str->len);
+	return 0;
+}
+
+int
+dstr_insert_cstr(struct dstr *ds, long index, const char *cstr)
+{
+	if (!ds || (index >= ds->cap) || !cstr) return EINVAL;
+	struct str s = {.s = cstr, .len = strlen(cstr)};
+	return dstr_insert_str(ds, index, &s);
 }
 
 #endif // DEFINE_STR
