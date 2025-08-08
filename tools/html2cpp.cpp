@@ -22,6 +22,7 @@ void convert_file(const std::filesystem::path& path)
 int main(int argc, char **argv)
 {
 	for (int i = 1; i < argc; ++i) {
-		convert_file(argv[i]);
+		std::filesystem::path path{argv[i]};
+		convert_file(path);
 	}
 }

@@ -339,8 +339,8 @@ static int get_more_data(struct request *r, int client, struct pool *p,
 		// Need to update space below if this isn't the case.
 		static_assert(SIZE_MAX > LONG_MAX, "Update cast below");
 		size_t space = (size_t)(bytes_needed - bytes_read);
-		ssize_t in = read(client, r->post_params_buffer.s +
-			bytes_read, space);
+		ssize_t in = read(client, (void*)(r->post_params_buffer.s +
+			bytes_read), space);
 		if (in < 0) {
 			fprintf(stderr,
 				"Failed to read from client: %d.\n",

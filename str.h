@@ -24,7 +24,7 @@
 struct pool;
 
 struct str {
-	char *s;
+	const char *s;
 	long len;
 };
 
@@ -329,7 +329,7 @@ int str_alloc_from_cstr(struct pool *p, const char *cstr, const long len,
 	int err = str_alloc(p, len, s);
 	if (err) return err;
 	assert(s->len > 0);
-	(void)memcpy(s->s, cstr, (size_t)s->len);
+	(void)memcpy((void*)s->s, cstr, (size_t)s->len);
 	return 0;
 }
 
@@ -373,7 +373,7 @@ dstr_free(struct dstr *ds)
 }
 
 static int
-dstr_grow_by(struct str *ds, long bytes)
+dstr_grow_by(struct dstr *ds, long bytes)
 {
 	long new_cap;
 	char *new_s;
@@ -387,13 +387,15 @@ dstr_grow_by(struct str *ds, long bytes)
 		// Can't fit the string in.
 		return ENOBUFS;
 	}
-	new_s = calloc(new_cap, sizeof(*new_s));
+	new_s = calloc((size_t)new_cap, sizeof(*new_s));
 	if (!new_s) {
 		return errno? errno: ENOMEM;
 	}
-	memcpy(new_s, ds->s, ds->len);
+	memcpy(new_s, ds->s, (size_t)ds->len);
 	free(ds->s);
 	ds->cap = new_cap;
+	ds->s = new_s;
+	return 0;
 }
 
 int
@@ -401,7 +403,7 @@ dstr_append_str(struct dstr *ds, const struct str *s)
 {
 	long space;
 	int error;
-	int i;
+	long i;
 
 	if (!ds || !s) return EINVAL;
 	space = ds->cap - ds->len;
@@ -420,7 +422,11 @@ int
 dstr_append_cstr(struct dstr *ds, const char *cstr)
 {
 	if (!ds || !cstr) return EINVAL;
-	struct str s = {.s = cstr, .len = strlen(cstr)};
+	size_t len = strlen(cstr);
+	if (len > LONG_MAX) {
+		return EINVAL;
+	}
+	struct str s = {.s = cstr, .len = (long)len};
 	return dstr_append_str(ds, &s);
 }
 
@@ -428,15 +434,16 @@ int
 dstr_insert_str(struct dstr *ds, long index, const struct str *str)
 {
 	long space;
+	int error;
 
-	if (!ds || !s || (index >= ds->cap) return EINVAL;
+	if (!ds || !str || (index >= ds->cap)) return EINVAL;
 	space = ds->cap - ds->len;
 	if (space < str->len) {
 		error = dstr_grow_by(ds, str->len);
 		if (error) return error;
 	}
-	memmove(ds->s + index + str->len, ds->s + index, str->len);
-	memcpy(ds->s + index, str->s, str->len);
+	memmove(ds->s + index + str->len, ds->s + index, (size_t)str->len);
+	memcpy(ds->s + index, str->s, (size_t)str->len);
 	return 0;
 }
 
@@ -444,8 +451,25 @@ int
 dstr_insert_cstr(struct dstr *ds, long index, const char *cstr)
 {
 	if (!ds || (index >= ds->cap) || !cstr) return EINVAL;
-	struct str s = {.s = cstr, .len = strlen(cstr)};
+	size_t len = strlen(cstr);
+	if (len > LONG_MAX) {
+		return ENOBUFS;
+	}
+#if WE_CANT_CONST_STR_STRS
+	long space;
+	int error;
+	space = ds->cap - ds->len;
+	if (space < len) {
+		error = dstr_grow_by(ds, (long)len);
+		if (error) return error;
+	}
+	memmove(ds->s + index + (long)len, ds->s + index, len);
+	memcpy(ds->s + index, cstr, len);
+	return 0;
+#else
+	struct str s = {.s = cstr, .len = (long)len};
 	return dstr_insert_str(ds, index, &s);
+#endif
 }
 
 #endif // DEFINE_STR

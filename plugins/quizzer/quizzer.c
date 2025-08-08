@@ -396,6 +396,7 @@ add_question(struct question *questions, struct question *new_q)
 	}
 	questions[question_count] = *new_q;
 	question_count++;
+	return 0;
 }
 
 static void
