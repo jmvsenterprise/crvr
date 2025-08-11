@@ -31,6 +31,7 @@ static const struct str s_end_of_header_str = STR("\r\n\r\n");
 static struct plugin plugins[] = {
 	{.library_name="quizzer", .uri_trigger="quizzer.html"},
 };
+static int s_server_sock = -1;
 
 // Local functions
 /**
@@ -254,9 +255,22 @@ int serve(int server_sock)
 	return result;
 }
 
+static void
+cleanup(int sign)
+{
+	if (server_socket != -1) {
+		close(server_socket);
+	}
+	cleanup_socket_layer();
+}
+
 int main()
 {
 	int result = 0;
+
+	signal(SIGABRT, cleanup);
+	signal(SIGKILL, cleanup);
+	signal(SIGTERM, cleanup);
 
 	// Load the ASL app
 	if (asl_init() != 0) {
@@ -272,8 +286,8 @@ int main()
 		printf("Failed to initialize the socket layer\n");
 		return get_error();
 	}
-	int server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-	if (server_sock != -1) {
+	s_server_sock = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
+	if (s_server_sock != -1) {
 		struct sockaddr_in address;
 		address.sin_family = AF_INET;
 		//address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
@@ -281,12 +295,12 @@ int main()
 		address.sin_port = htons(port);
 		printf("Server will listen on port %hu.\n", port);
 
-		result = bind(server_sock, (struct sockaddr*)&address,
+		result = bind(s_server_sock, (struct sockaddr*)&address,
 			sizeof(address));
 		if (0 == result) {
-			result = listen(server_sock, SOMAXCONN);
+			result = listen(s_server_sock, SOMAXCONN);
 			if (result != -1) {
-				result = serve(server_sock);
+				result = serve(s_server_sock);
 			} else {
 				printf("Server socket failed to listen: %d.\n",
 					get_error());
