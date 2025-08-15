@@ -20,8 +20,8 @@ OBJS=\
 	plugins.$(OBJ)
 
 PLUGINS:=\
-	quizzer.$(SO) 
-	#quizzer-c.$(SO)
+	quizzer-c.$(SO)
+	#quizzer.$(SO)
 
 CONVERTED_PAGES := \
 	plugins/quizzer/quiz_page.h \
@@ -30,7 +30,7 @@ CONVERTED_PAGES := \
 
 TOOLS := \
 	tools/html2c \
-	tools/html2cpp
+#	tools/html2cpp
 
 CONV := tools/html2c
 

@@ -4,6 +4,8 @@
  * This file contains the main routine and helper routines for the crvr
  * c[e]rv[e]r program.
  */
+#include <signal.h>
+
 #include <assert.h>
 #include <dirent.h>
 #include <errno.h>
@@ -256,10 +258,10 @@ int serve(int server_sock)
 }
 
 static void
-cleanup(int sign)
+cleanup(int)
 {
-	if (server_socket != -1) {
-		close(server_socket);
+	if (s_server_sock != -1) {
+		close(s_server_sock);
 	}
 	cleanup_socket_layer();
 }
@@ -311,7 +313,7 @@ int main()
 			result = -1;
 		}
 
-		close(server_sock);
+		close(s_server_sock);
 	} else {
 		printf("Could not create server socket: %d\n", get_error());
 		result = -1;
