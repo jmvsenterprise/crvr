@@ -36,33 +36,50 @@ struct question {
 	char *answer;
 };
 
-// An s-expression that stores info.
-struct cons {
-	struct car {
-		enum var_type type;
-		union data {
-			char *as_str;
-			int as_int;
-			unsigned as_uint;
-			float as_float;
-			struct cons *as_list;
-		} data;
-	} car;
-	struct cons *cdr;
+// Allocates memory out of a block of memory.
+typedef struct allocator {
+	// How big the block is
+	int block_size;
+	// The next byte that is unused.
+	int empty;
+	// The block of memory.
+	char *block;
+} Allocator;
+
+// An s-expression atom type, or basic data type.
+struct atom {
+	enum var_type type;
+	union {
+		char *as_cstr;
+		int as_int;
+		unsigned as_uint;
+		float as_float;
+	};
 };
 
-struct question *questions = NULL;
-long question_count = 0;
-long question_cap = 0;
+// An s-expression list type.
+struct list {
+	struct sexp *car;
+	struct sexp *cdr;
+};
 
-struct vars {
-	int count;
-	int cap;
-	char **names;
-	struct sexp *vars;
-} vars = {0};
+enum sexp_type {
+	ST_ATOM = 0,
+	ST_LIST = 1,
+};
 
-char *quiz_name = NULL;
+// An s-expression.
+typedef struct sexp {
+	enum sexp_type type;
+	union {
+		struct atom *atom;
+		struct list *list;
+	};
+} SExp;
+
+struct sexp *variables = NULL;
+struct sexp *quizzes = NULL;
+struct sexp *current_quiz = NULL;
 
 enum state {
 	STARTUP,
@@ -73,19 +90,31 @@ enum state {
 enum state current_state = STARTUP;
 
 // Local functions.
+// Allocator functions
+// Allocates memory from the allocator. Returns a valid pointer if successful,
+// otherwise NULL is returned.
+static void* allocate(Allocator *mem, int bytes);
+// Creates a restore point in the allocator to free memory for re-use. Send
+// the restore point into reset to free memory allocated after this call.
+static int get_reset_point(Allocator *mem);
+// Free all memory allocated after the reset point, enabling its re-use.
+static void reset(Allocator *mem, int reset_point);
+
 // LISP functions
+// Appends list a at the end of list b and returns b.
+static SExp *append(SExp *a, SExp *b);
 // Returns the first element of a list
-struct cons *car(struct cons *list);
+static struct sexp *car(struct sexp *list);
 // Returns the rest of the list past the first element.
-struct cons *cdr(struct cons *list);
-// Adds cons a to the front of cons b.
-struct cons *cons(struct cons *a, struct cons *b);
+static struct sexp *cdr(struct sexp *list);
+// Adds sexp a to the front of sexp b.
+static struct sexp *sexp(struct sexp *a, struct sexp *b);
 // Adds the list values together and returns the sum.
-struct sexp *add(struct cons *list);
+static struct sexp *add(struct sexp *list);
 // Returns the sexp that matches val in list (useful for lookup).
-struct cons *matches(struct cons *val, struct cons *list);
+static struct sexp *matches(struct sexp *val, struct sexp *list);
 // Splits a string up into sexps from the delimiter.
-struct cons *split_str(const char *cstr, char delimiter);
+static struct sexp *split_str(sexpt char *cstr, char delimiter);
 
 static int add_question(struct question *questions, struct question *new_q);
 static void clear_question(struct question *q);
@@ -108,8 +137,7 @@ static int create_var(const struct str *name);
  * Lookup and return the variable with the specified name. If the variable
  * doesn't exist, create it and return it.
  */
-static struct variable *get_var(const struct str *name);
-static struct variable *get_var_cstr(char *var_name);
+static struct sexp *get_var(const char *name);
 static int read_entire_file(const char *path, struct file_data *dest);
 /*
  * Remove the first q in the questions array, moving all the questions after
@@ -701,38 +729,17 @@ create_var(const struct str *name)
 	return 0;
 }
 
-static struct variable *
-get_var(const struct str *name)
+static struct sexp *
+get_var(const char *name)
 {
-	long i;
-	// Try to create it. If we get EEXIST or 0 we can go get it.
-	int error = create_var(name);
-	if (error != EEXIST && error != 0) {
-		perror("Cannot get variable");
-		return NULL;
-	}
-	for (i = 0; i < var_count; ++i) {
-		if (0 == str_cmp(&var_names[i], name)) {
-			return &var_values[i];
+	struct sexp *var = variables;
+	for (; var; var = cdr(var)) {
+		struct sexp *var_name = car(var);
+		if (sexp_eq_cstr(var_name, name)) {
+			return var;
 		}
 	}
-	perror("Failed to find variable???");
 	return NULL;
-}
-
-static struct variable *
-get_var_cstr(char *var_name)
-{
-	struct str s;
-	s.s = var_name;
-	unsigned long len = strlen(var_name);
-	if (len > (unsigned long)LONG_MAX) {
-		fprintf(stderr, "var name: %s is too long. Trimming.\n",
-			var_name);
-		len = LONG_MAX;
-	}
-	s.len = (long)len;
-	return get_var(&s);
 }
 
 /*
@@ -956,43 +963,38 @@ good_cleanup:
 	return error;
 }
 
-static int
-split_string(const struct str *str, struct str_array *dst, char delimiter)
+int
+split_str(const char *cstr, char delimiter, struct allocator *mem, SExp *dst)
 {
-	int error;
-	struct str *s;
+	if (!cstr || !mem || !dst) return EINVAL;
 
-	assert(str && dst);
+	int start = 0;
+	int delim = 0;
+	int len = strlen(cstr);
+	SExp *root = NULL;
+	for (; delim < len; ++delim) {
+		if (cstr[delim] == delimiter) {
+			cstr[delim] = 0;
+			SExp *word = allocate(mem, sizeof(*word));
+			if (!word) {
+				return ENOMEM;
+			}
+			word->type = ST_ATOM;
+			word->atom->type = VT_CSTR;
+			word->atom->as_cstr = cstr + start;
 
-	dst->count = 0;
-	dst->cap = 0;
-	dst->strs = NULL;
-
-	long prev = 0;
-	long current = 0;
-	for (; current < str->len; ++current) {
-		// Skip until we get to a delimiter.
-		if (str->s[current] != delimiter) {
-			continue;
+			root = append(word, root, allocator);
+			start = ++delim;
 		}
-		// Extract out the str.
-		error = str_array_get_new(dst, &s);
-		if (error) return error;
-		str_get_substr(str, prev, current, s);
-		prev = current + 1;
 	}
-	if (current > prev) {
-		error = str_array_get_new(dst, &s);
-		if (error) return error;
-		str_get_substr(str, prev, current, s);
-	}
+	*dst = root;
 	return 0;
 }
 
 /*
  * Replace the variables found in buf with their values.
  */
-static void replace_in_page(struct dstr *page)
+static int replace_in_page(struct page *page)
 {
 	long i;
 	for (i = 0; i < page->len; ++i) {
@@ -1024,30 +1026,40 @@ static void replace_in_page(struct dstr *page)
 		}
 
 		// Lookup variable
-		struct str tmp = {page->s, page->len};
-		struct str var_name;
-		int error = str_get_substr(&tmp, start, end, &var_name);
-		struct variable *entry = NULL;
-		if (error) {
-			printf("Failed to get var name %i", error);
-		} else {
-			printf("Looking for variable \"");
-			str_print(stdout, &var_name);
-			printf("\"...");
-			entry = get_var(&var_name);
-		}
-		if (entry == NULL) {
+		printf("Looking for variable \"%*s\"...", end - start, page + start);
+		SExp *var = find_variable(variables, page + start, end - start);
+		if (!var) {
 			printf("not found\n");
-			// Just escape the $
-			dstr_insert_cstr(page, start, "$");
 			// Jump past the escaped $. Loop also ++s
 			i++;
 			continue;
 		}
 		printf("found!\n");
-		// Otherwise we have the variable so replace the name with its
-		// value.
+		// We have a variable match, get the string version of the variable.
 		char var_as_str[512] = {0};
+		sexp_to_string(var, &var_as_str, LEN(var_as_str));
+
+		// Replace the variable deref in the page with the variable string value.
+		int name_len = end - start;
+		var_str_len = strlen(var_as_str);
+		if (name_len == var_str_len) {
+			// Lucky! Just overwrite the name with the variable.
+			memcpy(page + start, var_as_str, var_str_len);
+		} else if (name_len < var_str_len) {
+			// The name is longer, so just copy the var in and
+			// move everything after it forward.
+			memcpy(page + start, var_as_str, var_str_len);
+			memmove(page + start, page + end, page_len - end);
+		} else {
+			// The variable value is longer than the name. Move
+			// everything in the page out and then replace the
+			// variable with its value.
+			int space_needed = var_str_len - name_len;
+			error = page_growby(page, space_needed);
+			if (error) {
+				return error;
+			}
+#error working here
 		// +1 because we are starting at the '$' which is at i.
 		long var_len = end - start + 1;
 		switch (entry->type) {
