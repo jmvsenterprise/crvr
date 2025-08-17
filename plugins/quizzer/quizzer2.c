@@ -23,6 +23,7 @@ enum var_type {
 	VT_INT,
 	VT_UINT,
 	VT_FLOAT,
+	VT_LIST,
 };
 
 struct file_data {
@@ -36,16 +37,18 @@ struct question {
 };
 
 // An s-expression that stores info.
-struct sexp {
-	enum var_type type;
-	union data {
-		char *as_str;
-		int as_int;
-		unsigned as_uint;
-		float as_float;
-	} data;
-	struct sexp *left;
-	struct sexp *right;
+struct cons {
+	struct car {
+		enum var_type type;
+		union data {
+			char *as_str;
+			int as_int;
+			unsigned as_uint;
+			float as_float;
+			struct cons *as_list;
+		} data;
+	} car;
+	struct cons *cdr;
 };
 
 struct question *questions = NULL;
@@ -70,17 +73,19 @@ enum state {
 enum state current_state = STARTUP;
 
 // Local functions.
-// s-expression functions
+// LISP functions
 // Returns the first element of a list
-struct sexp *car(struct sexp *list);
+struct cons *car(struct cons *list);
 // Returns the rest of the list past the first element.
-struct sexp *cdr(struct sexp *list);
+struct cons *cdr(struct cons *list);
+// Adds cons a to the front of cons b.
+struct cons *cons(struct cons *a, struct cons *b);
 // Adds the list values together and returns the sum.
-struct sexp *add(struct sexp *list);
+struct sexp *add(struct cons *list);
 // Returns the sexp that matches val in list (useful for lookup).
-struct sexp *matches(struct sexp *val, struct sexp *list);
+struct cons *matches(struct cons *val, struct cons *list);
 // Splits a string up into sexps from the delimiter.
-struct sexp *split_str(const char *cstr, char delimiter);
+struct cons *split_str(const char *cstr, char delimiter);
 
 static int add_question(struct question *questions, struct question *new_q);
 static void clear_question(struct question *q);
