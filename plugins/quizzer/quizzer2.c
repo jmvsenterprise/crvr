@@ -17,6 +17,8 @@
 
 #define CONFIG_FILE "quizzer.conf"
 #define MAX_FILE_NAME_LEN 512
+// 4096 Kibibytes
+#define PAGE_SIZE 4096 * 1024
 
 enum var_type {
 	VT_CSTR,
@@ -107,14 +109,18 @@ static SExp *append(SExp *a, SExp *b);
 static struct sexp *car(struct sexp *list);
 // Returns the rest of the list past the first element.
 static struct sexp *cdr(struct sexp *list);
-// Adds sexp a to the front of sexp b.
-static struct sexp *sexp(struct sexp *a, struct sexp *b);
 // Adds the list values together and returns the sum.
 static struct sexp *add(struct sexp *list);
 // Returns the sexp that matches val in list (useful for lookup).
 static struct sexp *matches(struct sexp *val, struct sexp *list);
 // Splits a string up into sexps from the delimiter.
 static struct sexp *split_str(sexpt char *cstr, char delimiter);
+// Concatenates all sexps into a single string sexp
+static SExp *concat(SExp *list);
+
+// Build s-expressions from primitives
+// Create a sexp from a string.
+static struct sexp *sexp_from_cstr(const char *cstr);
 
 static int add_question(struct question *questions, struct question *new_q);
 static void clear_question(struct question *q);
@@ -129,10 +135,6 @@ static int load_quiz(const struct str *quiz_name);
 static int move_front_q_to(long offset);
 static int parse_quiz(struct file_data *quiz_data);
 static int read_in_quiz(FILE *f);
-static int str_array_get_new(struct str_array *arr, struct str **dst);
-static int str_array_add(struct str_array *arr, const struct str *str);
-static void str_array_free(struct str_array *arr);
-static int create_var(const struct str *name);
 /*
  * Lookup and return the variable with the specified name. If the variable
  * doesn't exist, create it and return it.
@@ -187,24 +189,25 @@ int load_plugin(void)
 
 	printf("%s: Default config:\n\"%s\"\n", __FILE__, config_data.data);
 
-	struct sexp *quizes = split_str(&config, '\n');
-	#error working here, converting things to sexps.
+	struct sexp *quizzes = split_str(&config, '\n');
 
 	printf("Configuration found these quizzes:\n");
-	struct variable *quizzes = get_variable("quizzes");
-	quizzes->type = VT_DSTR;
-	dstr_free(&quizzes->data.as_dstr);
-
-	for (long i = 0; i < quiz_files.count; i++) {
-		struct str *quiz_file = quiz_files.strs + i;
+	struct sexp *quiz = quizzes;
+	printf("Found quizzes:\n");
+	struct sexp *quiz_list_html = NULL;
+	while (quiz) {
 		putchar('\t');
-		str_print(stdout, quiz_file);
-		dstr_append_cstr(quiz_list_html, 
-			"<li><input type=\"submit\" name=\"button\" id=\"");
-		dstr_append_str(quiz_list_html, quiz_file);
-		dstr_append_cstr(quiz_list_html, "\" value=\"");
-		dstr_append_str(quiz_list_html, quiz_file);
-		dstr_append_cstr(quiz_list_html, "\"></li>\n");
+		sexp_print(quiz);
+		putchar('\n');
+		quiz_list_html = append(sexp_from_cstr(
+			"<li><input type=\"submit\" name=\"button\" id=\""),
+			quiz_list_html);
+		quiz_list_html = append(quiz, quiz_list_html);
+		quiz_list_html = append(sexp_from_cstr("\" value=\""),
+			quiz_list_html);
+		quiz_list_html = append(quiz, quiz_list_html);
+		quiz_list_html = append(sexp_from_cstr("\"></li>\n"),
+			quiz_list_html);
 	}
 
 	current_state = QUIZ_SELECTION;

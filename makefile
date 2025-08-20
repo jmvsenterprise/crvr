@@ -57,7 +57,7 @@ $(OUT): crvr.o $(LIBRARY)
 quizzer.$(SO): plugins/quizzer/quizzer.cpp $(CONVERTED_PAGES)
 	$(CXX) $(CXXFLAGS) $(DYLIB_FLAGS) $< -fPIC -shared -o $@ $(LDFLAGS) $(LDLIBS)
 
-quizzer-c.$(SO): plugins/quizzer/quizzer.c $(CONVERTED_PAGES)
+quizzer-c.$(SO): plugins/quizzer/quizzer2.c $(CONVERTED_PAGES)
 	$(CC) $(CFLAGS) $(DYLIB_FLAGS) $< -fPIC -shared -o $@ $(LDFLAGS) $(LDLIBS)
 
 analyze: crvr.c asl.c
